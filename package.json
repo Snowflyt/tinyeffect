@@ -1,0 +1,73 @@
+{
+  "name": "tinyeffect",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A tiny TypeScript library for handling side effects in a unified way using algebraic effects, offering a type-safe approach for async operations, error handling, dependency injection, and more.",
+  "keywords": [
+    "type safe",
+    "effect",
+    "side effect",
+    "algebraic effect",
+    "asynchronous",
+    "exception",
+    "dependency injection"
+  ],
+  "homepage": "https://github.com/Snowflyt/tinyeffect",
+  "bugs": {
+    "url": "https://github.com/Snowflyt/tinyeffect/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Snowflyt/tinyeffect"
+  },
+  "license": "MIT",
+  "author": "Snowflyt <gaoge011022@163.com>",
+  "type": "module",
+  "main": "./index.js",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "prebuild": "npm run clean",
+    "build": "tsc --emitDeclarationOnly -p tsconfig.build.json && sucrase src -d dist --transforms typescript && rimraf -g dist/*.{spec,proof}.js dist/types.{d.js,d.ts} && cpy src/**/*.{js,d.ts} dist && tsc-alias -p tsconfig.build.json && replace-in-file \"/^\\s*\\/\\/ eslint-disable-next-line .+$/mg\" \"\" dist/**/*.js --isRegex && replace-in-file \"/^\\s*\\/\\/ @ts-.+$/mg\" \"\" dist/**/*.js --isRegex && prettier --log-level=silent --print-width 80 --write dist/**/* --ignore-path !dist/**/* && cpy package.json dist && json -I -f dist/package.json -e \"delete this.private; delete this.scripts; delete this.devDependencies\" && cpy README.md dist && cpy screenshot.svg dist && cpy LICENSE dist",
+    "clean": "rimraf dist",
+    "format": "prettier --no-error-on-unmatched-pattern --write **/*.{js,ts,json,md} *.{cjs,mjs,cts,mts}",
+    "lint": "eslint **/*.{js,ts} *.{cjs,mjs,cts,mts} --no-error-on-unmatched-pattern --report-unused-disable-directives-severity error --max-warnings 0",
+    "lint:fix": "eslint --fix **/*.{js,ts} *.{cjs,mjs,cts,mts} --no-error-on-unmatched-pattern --report-unused-disable-directives-severity error --max-warnings 0",
+    "prepare": "husky",
+    "test": "vitest run",
+    "test-types": "typroof",
+    "test:cov": "vitest run --coverage --coverage.include \"src/**/!(*.proof).{js,ts}\"",
+    "test:ui": "vitest --ui --coverage.enabled=true --coverage.include \"src/**/!(*.proof).{js,ts}\"",
+    "test:watch": "vitest",
+    "test:watch-cov": "vitest --coverage --coverage.include \"src/**/!(*.proof).{js,ts}\""
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.5.0",
+    "@types/eslint": "^8.56.12",
+    "@types/lint-staged": "^13.3.0",
+    "@typescript-eslint/eslint-plugin": "^8.12.2",
+    "@typescript-eslint/parser": "^8.12.2",
+    "@vitest/coverage-v8": "^2.1.4",
+    "@vitest/ui": "^2.1.4",
+    "cpy-cli": "^5.0.0",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-import-resolver-typescript": "^3.6.3",
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "eslint-plugin-sonarjs": "^0.25.1",
+    "eslint-plugin-sort-destructure-keys": "^2.0.0",
+    "husky": "^9.1.6",
+    "json": "^11.0.0",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.3.3",
+    "prettier-plugin-packagejson": "^2.5.3",
+    "replace-in-file": "^8.2.0",
+    "rimraf": "^6.0.1",
+    "sucrase": "^3.35.0",
+    "tsc-alias": "^1.8.10",
+    "typescript": "^5.6.3",
+    "typroof": "^0.2.10",
+    "vitest": "^2.1.4"
+  }
+}
