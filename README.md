@@ -15,6 +15,12 @@ Handle side effects in a <strong>unified</strong> way, with <strong>type-safety<
   <a href="https://bundlephobia.com/package/tinyeffect">
     <img src="https://img.shields.io/bundlephobia/minzip/tinyeffect.svg" alt="minzipped size" height="18">
   </a>
+  <a href="https://github.com/Snowflyt/tinyeffect/actions/workflows/test.yml">
+    <img src="https://github.com/Snowflyt/tinyeffect/actions/workflows/test.yml/badge.svg" alt="test status" height="18">
+  </a>
+  <a href="https://coveralls.io/github/Snowflyt/tinyeffect?branch=main">
+    <img src="https://coveralls.io/repos/github/Snowflyt/tinyeffect/badge.svg?branch=main" alt="coverage status" height="18">
+  </a>
   <a href="https://github.com/gvergnaud/tinyeffect">
     <img src="https://img.shields.io/npm/l/tinyeffect.svg" alt="MIT license" height="18">
   </a>
