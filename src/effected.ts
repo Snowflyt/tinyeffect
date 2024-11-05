@@ -679,6 +679,45 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Catch an error effect and throw it as an error.
+   * @param name The name of the error effect.
+   * @param message The message of the error. If it is a function, it will be called with the
+   * message of the error effect, and the return value will be used as the message of the error.
+   * @returns
+   */
+  catchAndThrow<Name extends ErrorName<E>>(
+    name: Name,
+    message?: string | ((message?: string) => string | undefined),
+  ): Effected<Exclude<E, Effect.Error<Name>>, R> {
+    return this.catch(name, (...args) => {
+      throw new (buildErrorClass(name))(
+        ...(typeof message === "string" ? [message]
+        : typeof message === "function" ? [message(...args)].filter((v) => v !== undefined)
+        : args),
+      );
+    });
+  }
+
+  /**
+   * Catch all error effects and throw them as an error.
+   * @param message The message of the error. If it is a function, it will be called with the name
+   * and the message of the error effect, and the return value will be used as the message of the
+   * error.
+   * @returns
+   */
+  catchAllAndThrow(
+    message?: string | ((error: string, message?: string) => string | undefined),
+  ): Effected<Exclude<E, Effect.Error>, R> {
+    return this.catchAll((error, ...args) => {
+      throw new (buildErrorClass(error))(
+        ...(typeof message === "string" ? [message]
+        : typeof message === "function" ? [message(error, ...args)].filter((v) => v !== undefined)
+        : args),
+      );
+    });
+  }
+
+  /**
    * Provide a value for a dependency effect.
    * @param name The name of the dependency.
    * @param value The value to provide for the dependency.
@@ -996,6 +1035,15 @@ interface EffectedDraft<
     ): Effected<Exclude<E, Effect.Error>, R | T>;
   };
 
+  readonly catchAndThrow: <Name extends ErrorName<E>>(
+    name: Name,
+    message?: string | ((message?: string) => string | undefined),
+  ) => Effected<Exclude<E, Effect.Error<Name>>, R>;
+
+  readonly catchAllAndThrow: (
+    message?: string | ((error: string, message?: string) => string | undefined),
+  ) => Effected<Exclude<E, Effect.Error>, R>;
+
   readonly provide: <Name extends DependencyName<E>>(
     name: Name,
     value: E extends Effect.Dependency<Name, infer R> ? R : never,
@@ -1248,6 +1296,29 @@ const isGenerator = (value: unknown): value is Generator =>
 const capitalize = (str: string) => {
   if (str.length === 0) return str;
   return str[0]!.toUpperCase() + str.slice(1);
+};
+
+const buildErrorClass = (name: string) => {
+  const ErrorClass = class extends Error {
+    constructor(message?: string) {
+      super(message);
+    }
+  };
+  let errorName = capitalize(name);
+  if (!errorName.endsWith("Error") && !errorName.endsWith("error")) errorName += "Error";
+  Object.defineProperty(ErrorClass, "name", {
+    value: errorName,
+    writable: false,
+    enumerable: false,
+    configurable: true,
+  });
+  Object.defineProperty(ErrorClass.prototype, "name", {
+    value: errorName,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
+  return ErrorClass;
 };
 
 const stringifyEffectName = (name: string | symbol | ((...args: never) => unknown)) =>

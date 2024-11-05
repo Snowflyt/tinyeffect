@@ -266,43 +266,6 @@ test("The `Effect` type > Provide more readable type information", () => {
   );
 });
 
-test("Interlude: Where’s “try-catch”?", () => {
-  type SyntaxError = Effect.Error<"syntax">;
-  const syntaxError: EffectFactory<SyntaxError> = error("syntax");
-  type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
-  const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
-
-  const parseJSON = <T>(json: string): Effected<SyntaxError | Raise, T> =>
-    effected(function* () {
-      try {
-        return JSON.parse(json);
-      } catch (e) {
-        if (e instanceof SyntaxError) return yield* syntaxError(e.message);
-        return yield* raise(e);
-      }
-    });
-
-  interface Settings {
-    something: string;
-  }
-
-  const defaultSettings: Settings = {
-    something: "foo",
-  };
-
-  const readSettings = (json: string) =>
-    effected(function* () {
-      const settings = yield* parseJSON<Settings>(json).catch("syntax", (message) => {
-        console.error(`Invalid JSON: ${message}`);
-        return defaultSettings;
-      });
-      expect(settings).to(equal<Settings>);
-      /* ... */
-    });
-
-  expect(readSettings).to(equal<(json: string) => Effected<Raise, void>>);
-});
-
 test("A deep dive into `resume` and `terminate`", () => {
   type Iterate<T> = Effect<"iterate", [value: T], void>;
   const iterate = <T>(value: T) => effect("iterate")<[value: T], void>(value);
@@ -503,6 +466,100 @@ test("Handling multiple effects in one handler", () => {
 
     expect<InferEffect<typeof range4>>().to(equal<Log>);
     expect(range4).to(extend(range3));
+  }
+});
+
+test("Handling error effects", () => {
+  {
+    type SyntaxError = Effect.Error<"syntax">;
+    const syntaxError: EffectFactory<SyntaxError> = error("syntax");
+    type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
+    const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
+
+    const parseJSON = <T>(json: string): Effected<SyntaxError | Raise, T> =>
+      effected(function* () {
+        try {
+          return JSON.parse(json);
+        } catch (e) {
+          if (e instanceof SyntaxError) return yield* syntaxError(e.message);
+          return yield* raise(e);
+        }
+      });
+
+    interface Settings {
+      something: string;
+    }
+
+    const defaultSettings: Settings = {
+      something: "foo",
+    };
+
+    const readSettings = (json: string) =>
+      effected(function* () {
+        const settings = yield* parseJSON<Settings>(json).catch("syntax", (message) => {
+          console.error(`Invalid JSON: ${message}`);
+          return defaultSettings;
+        });
+        expect(settings).to(equal<Settings>);
+        /* ... */
+      });
+
+    expect(readSettings).to(equal<(json: string) => Effected<Raise, void>>);
+  }
+
+  {
+    type TypeError = Effect.Error<"type">;
+    const typeError: EffectFactory<TypeError> = error("type");
+    type RangeError = Effect.Error<"range">;
+    const rangeError: EffectFactory<RangeError> = error("range");
+
+    type Log = Effect<"log", unknown[], void>;
+    const log: EffectFactory<Log> = effect("log");
+
+    const range = (start: number, stop: number): Effected<TypeError | RangeError | Log, number[]> =>
+      effected(function* () {
+        if (start >= stop) return yield* rangeError("Start must be less than stop");
+        if (!Number.isInteger(start) || !Number.isInteger(stop))
+          return yield* typeError("Start and stop must be integers");
+        yield* log(`Generating range from ${start} to ${stop}`);
+        return Array.from({ length: stop - start }, (_, i) => start + i);
+      });
+
+    const tolerantRange = (start: number, stop: number) =>
+      range(start, stop).catchAll((error, message) => {
+        console.warn(`Error(${error}): ${message || ""}`);
+        return [] as number[];
+      });
+
+    expect(tolerantRange).to(equal<(start: number, stop: number) => Effected<Log, number[]>>);
+
+    const range2 = (start: number, stop: number) => range(start, stop).catchAndThrow("type");
+
+    expect(range2).to(equal<(start: number, stop: number) => Effected<RangeError | Log, number[]>>);
+
+    const range3 = (start: number, stop: number) =>
+      range(start, stop).catchAndThrow("type", "Invalid start or stop value");
+
+    expect(range3).to(equal<(start: number, stop: number) => Effected<RangeError | Log, number[]>>);
+
+    const range4 = (start: number, stop: number) =>
+      range(start, stop).catchAndThrow("range", (message) => `Invalid range: ${message}`);
+
+    expect(range4).to(equal<(start: number, stop: number) => Effected<TypeError | Log, number[]>>);
+
+    const range5 = (start: number, stop: number) => range(start, stop).catchAllAndThrow();
+
+    expect(range5).to(equal<(start: number, stop: number) => Effected<Log, number[]>>);
+
+    const range6 = (start: number, stop: number) =>
+      range(start, stop).catchAllAndThrow("An error occurred while generating the range");
+
+    expect(range6).to(equal<(start: number, stop: number) => Effected<Log, number[]>>);
+
+    const range7 = (start: number, stop: number) =>
+      range(start, stop).catchAllAndThrow((error, message) => `Error(${error}): ${message}`);
+
+    expect(range7).to(equal<(start: number, stop: number) => Effected<Log, number[]>>);
   }
 });
 

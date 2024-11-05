@@ -615,47 +615,6 @@ const createUser: (
 >;
 ```
 
-### Interlude: Where’s “try-catch”?
-
-With side effects, including errors, now handled in a unified way, you may wonder where `try-catch` fits in. The answer is simple: it’s no longer needed. Errors are just effects, so you can handle specific ones with `.catch()` and let others bubble up to higher-level handlers.
-
-For example, suppose your program accepts a JSON string to define settings. You use `JSON.parse` to parse it, but if the JSON is invalid, instead of throwing an error, you want to print a warning and fall back on a default setting. Here’s how to do it:
-
-```typescript
-type SyntaxError = Effect.Error<"syntax">;
-const syntaxError: EffectFactory<SyntaxError> = error("syntax");
-// For other unexpected errors, we use an unresumable effect "raise" to terminate the program
-type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
-const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
-
-const parseJSON = <T>(json: string): Effected<SyntaxError | Raise, T> =>
-  effected(function* () {
-    try {
-      return JSON.parse(json);
-    } catch (e) {
-      if (e instanceof SyntaxError) return yield* syntaxError(e.message);
-      return yield* raise(e);
-    }
-  });
-
-interface Settings {
-  /* ... */
-}
-
-const defaultSettings: Settings = {
-  /* ... */
-};
-
-const readSettings = (json: string) =>
-  effected(function* () {
-    const settings = yield* parseJSON<Settings>(json).catch("syntax", (message) => {
-      console.error(`Invalid JSON: ${message}`);
-      return defaultSettings;
-    });
-    /* ... */
-  });
-```
-
 ### A deep dive into `resume` and `terminate`
 
 Let’s take a closer look at the `resume` and `terminate` functions. `resume` resumes the program with a given value, while `terminate` stops the program with a value immediately. Use `terminate` when you need to end the program early, such as when an error occurs, while `resume` is typically used to continue normal execution.
@@ -955,6 +914,92 @@ const range3 = (start: number, stop: number) =>
 ```
 
 The `.catchAll()` method takes a function that receives the error effect name and message, and returns a new value. `range3` behaves the same as `range2`, with an identical type signature.
+
+### Handling error effects
+
+With side effects, including errors, now handled in a unified way, you may wonder where `try-catch` fits in. The answer is simple: it’s no longer needed. Errors are just effects, so you can handle specific ones with `.catch()` and let others bubble up to higher-level handlers.
+
+For example, suppose your program accepts a JSON string to define settings. You use `JSON.parse` to parse it, but if the JSON is invalid, instead of throwing an error, you want to print a warning and fall back on a default setting. Here’s how to do it:
+
+```typescript
+type SyntaxError = Effect.Error<"syntax">;
+const syntaxError: EffectFactory<SyntaxError> = error("syntax");
+// For other unexpected errors, we use an unresumable effect "raise" to terminate the program
+type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
+const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
+
+const parseJSON = <T>(json: string): Effected<SyntaxError | Raise, T> =>
+  effected(function* () {
+    try {
+      return JSON.parse(json);
+    } catch (e) {
+      if (e instanceof SyntaxError) return yield* syntaxError(e.message);
+      return yield* raise(e);
+    }
+  });
+
+interface Settings {
+  /* ... */
+}
+
+const defaultSettings: Settings = {
+  /* ... */
+};
+
+const readSettings = (json: string) =>
+  effected(function* () {
+    const settings = yield* parseJSON<Settings>(json).catch("syntax", (message) => {
+      console.error(`Invalid JSON: ${message}`);
+      return defaultSettings;
+    });
+    /* ... */
+  });
+```
+
+As shown in the previous section, you can also use `.catchAll()` to catch all error effects at once, which is useful if you want a unified response to all errors. For instance:
+
+```typescript
+const tolerantRange = (start: number, stop: number): Effected<Log, number[]> =>
+  range(start, stop).catchAll((error, message) => {
+    console.warn(`Error(${error}): ${message || ""}`);
+    return [];
+  });
+```
+
+Running `tolerantRange(4, 1).resume("log", console.log).runSync()` will output `[]`, with a warning message printed to the console:
+
+```text
+Error(range): Start must be less than stop
+```
+
+If you prefer some errors to raise exceptions instead of handling them within your effects system, you can use the `.catchAndThrow(error, message?)` method:
+
+```typescript
+// Throws "type" error effect as an exception with its original message
+const range2 = (start: number, stop: number) => range(start, stop).catchAndThrow("type");
+
+// Throws "type" error effect with a custom message
+const range3 = (start: number, stop: number) =>
+  range(start, stop).catchAndThrow("type", "Invalid start or stop value");
+
+// Throws "range" error effect with a customized message based on the error
+const range4 = (start: number, stop: number) =>
+  range(start, stop).catchAndThrow("range", (message) => `Invalid range: ${message}`);
+```
+
+For example, running `range2(1.5, 2).catch("range", () => {}).resume("log", console.log).runSync()` will throw an exception with the message “Start and stop must be integers”.
+
+To throw all error effects as exceptions, you can use `.catchAllAndThrow(message?)`:
+
+```typescript
+const range2 = (start: number, stop: number) => range(start, stop).catchAllAndThrow();
+
+const range3 = (start: number, stop: number) =>
+  range(start, stop).catchAllAndThrow("An error occurred while generating the range");
+
+const range4 = (start: number, stop: number) =>
+  range(start, stop).catchAllAndThrow((error, message) => `Error(${error}): ${message}`);
+```
 
 ### Abstracting/combining handlers
 

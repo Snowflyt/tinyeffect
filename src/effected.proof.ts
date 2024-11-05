@@ -5,7 +5,7 @@ import { beNever, describe, equal, expect, it, error as triggerError } from "typ
 import { dependency, effect, effected, error } from ".";
 
 import type { Effected } from "./effected";
-import type { Effect, InferEffect, UnhandledEffect, Unresumable } from "./types";
+import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from "./types";
 
 const add42 = effect("add42")<[n: number], number>;
 const now = effect("now")<[], Date>;
@@ -187,5 +187,74 @@ describe("effected", () => {
     );
     expect<InferEffect<typeof program3>>().to(equal<Effect<"now", [], Date>>);
     expect<InferEffect<typeof program4>>().to(beNever);
+  });
+});
+
+describe("Effected#catchAndThrow", () => {
+  type TypeError = Effect.Error<"type">;
+  const typeError: EffectFactory<TypeError> = error("type");
+  type RangeError = Effect.Error<"range">;
+  const rangeError: EffectFactory<RangeError> = error("range");
+
+  it("should exclude the specified error effect", () => {
+    const program = effected(function* () {
+      yield* typeError("foo");
+      yield* rangeError("bar");
+    });
+
+    expect(program.catchAndThrow("type")).not.to(triggerError);
+    expect(program.catchAndThrow("type")).to(equal<Effected<RangeError, void>>);
+    expect(program.catchAndThrow("range")).not.to(triggerError);
+    expect(program.catchAndThrow("range")).to(equal<Effected<TypeError, void>>);
+    expect(program.catchAndThrow("type").catchAndThrow("range")).not.to(triggerError);
+    expect(program.catchAndThrow("type").catchAndThrow("range")).to(equal<Effected<never, void>>);
+
+    expect(program.catchAndThrow("type", "custom message")).not.to(triggerError);
+    expect(program.catchAndThrow("type", "custom message")).to(equal<Effected<RangeError, void>>);
+    expect(program.catchAndThrow("range", "custom message")).not.to(triggerError);
+    expect(program.catchAndThrow("range", "custom message")).to(equal<Effected<TypeError, void>>);
+    expect(program.catchAndThrow("type", "foo").catchAndThrow("range", "bar")).not.to(triggerError);
+    expect(program.catchAndThrow("type", "foo").catchAndThrow("range", "bar")).to(
+      equal<Effected<never, void>>,
+    );
+
+    program.catchAndThrow("type", (message) => {
+      expect<typeof message>().to(equal<string | undefined>);
+      return "";
+    });
+    expect(program.catchAndThrow("type", (message) => `custom ${message}`)).not.to(triggerError);
+    expect(program.catchAndThrow("type", (message) => `custom ${message}`)).to(
+      equal<Effected<RangeError, void>>,
+    );
+  });
+});
+
+describe("Effected#catchAndThrowAll", () => {
+  type TypeError = Effect.Error<"type">;
+  const typeError: EffectFactory<TypeError> = error("type");
+  type RangeError = Effect.Error<"range">;
+  const rangeError: EffectFactory<RangeError> = error("range");
+
+  it("should exclude all error effects", () => {
+    const program = effected(function* () {
+      yield* typeError("foo");
+      yield* rangeError("bar");
+    });
+
+    expect(program.catchAllAndThrow()).not.to(triggerError);
+    expect(program.catchAllAndThrow()).to(equal<Effected<never, void>>);
+
+    expect(program.catchAllAndThrow("custom message")).not.to(triggerError);
+    expect(program.catchAllAndThrow("custom message")).to(equal<Effected<never, void>>);
+
+    program.catchAllAndThrow((error, message) => {
+      expect<typeof error>().to(equal<string>);
+      expect<typeof message>().to(equal<string | undefined>);
+      return "";
+    });
+    expect(program.catchAllAndThrow((error, message) => `${error}${message}`)).not.to(triggerError);
+    expect(program.catchAllAndThrow((error, message) => `${error}${message}`)).to(
+      equal<Effected<never, void>>,
+    );
   });
 });

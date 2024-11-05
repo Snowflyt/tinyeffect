@@ -601,3 +601,138 @@ describe("effected", () => {
     ).rejects.toThrowError("error");
   });
 });
+
+describe("Effected#catchAndThrow", () => {
+  const typeError = error("type");
+
+  it("should catch error effects and throw them", () => {
+    let thrown = false;
+    try {
+      effected(function* () {
+        yield* typeError("foo");
+      })
+        .catchAndThrow("type")
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("foo");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("TypeError");
+        expect(errorProto.constructor.name).toBe("TypeError");
+      }
+    }
+    expect(thrown).toBe(true);
+  });
+
+  it("should catch error effects and throw them with custom error message", () => {
+    let thrown = false;
+    try {
+      effected(function* () {
+        yield* typeError("foo");
+      })
+        .catchAndThrow("type", "custom message")
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("custom message");
+      }
+    }
+    expect(thrown).toBe(true);
+
+    thrown = false;
+    try {
+      effected(function* () {
+        yield* typeError("foo");
+      })
+        .catchAndThrow("type", (message) => `custom ${message}`)
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("custom foo");
+      }
+    }
+    expect(thrown).toBe(true);
+  });
+});
+
+describe("Effected#catchAndThrowAll", () => {
+  const typeError = error("type");
+  const rangeError = error("range");
+
+  it("should catch all error effects and throw them", () => {
+    let thrown = false;
+    try {
+      effected(function* () {
+        yield* typeError("foo");
+        yield* rangeError("bar");
+      })
+        .catchAllAndThrow()
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        const errorName = e.name;
+        expect(errorName).toEqual(expect.stringMatching(/TypeError|RangeError/));
+        expect(e.message).toBe(errorName === "TypeError" ? "foo" : "bar");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe(errorName);
+        expect(errorProto.constructor.name).toBe(errorName);
+      }
+    }
+    expect(thrown).toBe(true);
+  });
+
+  it("should catch all error effects and throw them with custom error message", () => {
+    let thrown = false;
+    try {
+      effected(function* () {
+        yield* typeError("foo");
+        yield* rangeError("bar");
+      })
+        .catchAllAndThrow("custom message")
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        const errorName = e.name;
+        expect(errorName).toEqual(expect.stringMatching(/TypeError|RangeError/));
+        expect(e.message).toBe("custom message");
+      }
+    }
+    expect(thrown).toBe(true);
+
+    thrown = false;
+    try {
+      effected(function* () {
+        yield* typeError("foo");
+        yield* rangeError("bar");
+      })
+        .catchAllAndThrow((error, message) => `custom ${error} ${message}`)
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        const errorName = e.name;
+        expect(errorName).toEqual(expect.stringMatching(/TypeError|RangeError/));
+        expect(e.message).toBe(`custom ${errorName === "TypeError" ? "type foo" : "range bar"}`);
+      }
+    }
+    expect(thrown).toBe(true);
+  });
+});

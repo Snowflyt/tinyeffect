@@ -500,56 +500,6 @@ test("The `Effect` type > Unresumable effects", () => {
   );
 });
 
-test("Interlude: Where’s “try-catch”?", () => {
-  type SyntaxError = Effect.Error<"syntax">;
-  const syntaxError: EffectFactory<SyntaxError> = error("syntax");
-  type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
-  const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
-
-  const parseJSON = <T>(json: string): Effected<SyntaxError | Raise, T> =>
-    effected(function* () {
-      try {
-        return JSON.parse(json);
-      } catch (e) {
-        if (e instanceof SyntaxError) return yield* syntaxError(e.message);
-        return yield* raise(e);
-      }
-    });
-
-  interface Settings {
-    something: string;
-  }
-
-  const defaultSettings: Settings = {
-    something: "foo",
-  };
-
-  const readSettings = (json: string) =>
-    effected(function* () {
-      return yield* parseJSON<Settings>(json).catch("syntax", (message) => {
-        console.error(`Invalid JSON: ${message}`);
-        return defaultSettings;
-      });
-    });
-
-  const spyError = vi.spyOn(console, "error").mockImplementation(() => {});
-  expect(
-    readSettings("invalid json")
-      .terminate("raise", () => {})
-      .runSync(),
-  ).toEqual(defaultSettings);
-  expect(spyError).toHaveBeenCalledOnce();
-  expect(spyError.mock.calls[0]!.length).toBe(1);
-  expect(spyError.mock.calls[0]![0]).toMatch(/^Invalid JSON: Unexpected token /);
-  spyError.mockRestore();
-
-  expect(
-    readSettings('{"something": "bar"}')
-      .terminate("raise", () => {})
-      .runSync(),
-  ).toEqual({ something: "bar" });
-});
-
 test("A deep dive into `resume` and `terminate`", () => {
   {
     const raise = effect("raise")<[error: unknown], any>;
@@ -865,6 +815,234 @@ test("Handling multiple effects in one handler", () => {
         .runSync(),
     ).toEqual(ok([1, 2, 3, 4]));
     expect(logs).toEqual([["Generating range from 1 to 5"]]);
+  }
+});
+
+test("Handling error effects", () => {
+  {
+    type SyntaxError = Effect.Error<"syntax">;
+    const syntaxError: EffectFactory<SyntaxError> = error("syntax");
+    type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
+    const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
+
+    const parseJSON = <T>(json: string): Effected<SyntaxError | Raise, T> =>
+      effected(function* () {
+        try {
+          return JSON.parse(json);
+        } catch (e) {
+          if (e instanceof SyntaxError) return yield* syntaxError(e.message);
+          return yield* raise(e);
+        }
+      });
+
+    interface Settings {
+      something: string;
+    }
+
+    const defaultSettings: Settings = {
+      something: "foo",
+    };
+
+    const readSettings = (json: string) =>
+      effected(function* () {
+        return yield* parseJSON<Settings>(json).catch("syntax", (message) => {
+          console.error(`Invalid JSON: ${message}`);
+          return defaultSettings;
+        });
+      });
+
+    const spyError = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(
+      readSettings("invalid json")
+        .terminate("raise", () => {})
+        .runSync(),
+    ).toEqual(defaultSettings);
+    expect(spyError).toHaveBeenCalledOnce();
+    expect(spyError.mock.calls[0]!.length).toBe(1);
+    expect(spyError.mock.calls[0]![0]).toMatch(/^Invalid JSON: Unexpected token /);
+    spyError.mockRestore();
+
+    expect(
+      readSettings('{"something": "bar"}')
+        .terminate("raise", () => {})
+        .runSync(),
+    ).toEqual({ something: "bar" });
+  }
+
+  {
+    type TypeError = Effect.Error<"type">;
+    const typeError: EffectFactory<TypeError> = error("type");
+    type RangeError = Effect.Error<"range">;
+    const rangeError: EffectFactory<RangeError> = error("range");
+
+    type Log = Effect<"log", unknown[], void>;
+    const log: EffectFactory<Log> = effect("log");
+
+    const range = (start: number, stop: number): Effected<TypeError | RangeError | Log, number[]> =>
+      effected(function* () {
+        if (start >= stop) return yield* rangeError("Start must be less than stop");
+        if (!Number.isInteger(start) || !Number.isInteger(stop))
+          return yield* typeError("Start and stop must be integers");
+        yield* log(`Generating range from ${start} to ${stop}`);
+        return Array.from({ length: stop - start }, (_, i) => start + i);
+      });
+
+    const tolerantRange = (start: number, stop: number) =>
+      range(start, stop).catchAll((error, message) => {
+        console.warn(`Error(${error}): ${message || ""}`);
+        return [] as number[];
+      });
+
+    const spyWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(
+      tolerantRange(4, 1)
+        .resume("log", () => {})
+        .runSync(),
+    ).toEqual([]);
+    expect(spyWarn.mock.calls).toMatchInlineSnapshot(`
+      [
+        [
+          "Error(range): Start must be less than stop",
+        ],
+      ]
+    `);
+    spyWarn.mockRestore();
+
+    const range2 = (start: number, stop: number) => range(start, stop).catchAndThrow("type");
+
+    let thrown = false;
+    try {
+      range2(1.5, 2)
+        .catch("range", () => {})
+        .resume("log", console.log)
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("Start and stop must be integers");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("TypeError");
+        expect(errorProto.constructor.name).toBe("TypeError");
+        expect(e);
+      }
+    }
+    expect(thrown).toBe(true);
+
+    const range3 = (start: number, stop: number) =>
+      range(start, stop).catchAndThrow("type", "Invalid start or stop value");
+
+    thrown = false;
+    try {
+      range3(1.5, 2)
+        .catch("range", () => {})
+        .resume("log", console.log)
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("Invalid start or stop value");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("TypeError");
+        expect(errorProto.constructor.name).toBe("TypeError");
+        expect(e);
+      }
+    }
+    expect(thrown).toBe(true);
+
+    const range4 = (start: number, stop: number) =>
+      range(start, stop).catchAndThrow("range", (message) => `Invalid range: ${message}`);
+
+    thrown = false;
+    try {
+      range4(4, 1)
+        .catch("type", () => {})
+        .resume("log", console.log)
+        .runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("RangeError");
+        expect(e.message).toBe("Invalid range: Start must be less than stop");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("RangeError");
+        expect(errorProto.constructor.name).toBe("RangeError");
+        expect(e);
+      }
+    }
+    expect(thrown).toBe(true);
+
+    const range5 = (start: number, stop: number) => range(start, stop).catchAllAndThrow();
+
+    thrown = false;
+    try {
+      range5(4, 1).resume("log", console.log).runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("RangeError");
+        expect(e.message).toBe("Start must be less than stop");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("RangeError");
+        expect(errorProto.constructor.name).toBe("RangeError");
+        expect(e);
+      }
+    }
+
+    const range6 = (start: number, stop: number) =>
+      range(start, stop).catchAllAndThrow("An error occurred while generating the range");
+
+    thrown = false;
+    try {
+      range6(1.5, 2).resume("log", console.log).runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("An error occurred while generating the range");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("TypeError");
+        expect(errorProto.constructor.name).toBe("TypeError");
+        expect(e);
+      }
+    }
+
+    const range7 = (start: number, stop: number) =>
+      range(start, stop).catchAllAndThrow((error, message) => `Error(${error}): ${message}`);
+
+    thrown = false;
+    try {
+      range7(1.5, 2).resume("log", console.log).runSync();
+    } catch (e) {
+      thrown = true;
+      expect(e).toBeInstanceOf(Error);
+      if (e instanceof Error) {
+        expect(e.name).toBe("TypeError");
+        expect(e.message).toBe("Error(type): Start and stop must be integers");
+        const errorProto = Object.getPrototypeOf(e);
+        expect(errorProto).not.toBe(Error.prototype);
+        expect(errorProto).toBeInstanceOf(Error);
+        expect(errorProto.name).toBe("TypeError");
+        expect(errorProto.constructor.name).toBe("TypeError");
+        expect(e);
+      }
+    }
   }
 });
 
