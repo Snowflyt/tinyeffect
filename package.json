@@ -1,6 +1,6 @@
 {
   "name": "tinyeffect",
-  "version": "0.1.0",
+  "version": "0.1.1~dev",
   "private": true,
   "description": "A tiny TypeScript library for handling side effects in a unified way using algebraic effects, offering a type-safe approach for async operations, error handling, dependency injection, and more.",
   "keywords": [
