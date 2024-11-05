@@ -550,11 +550,11 @@ test("Abstracting handlers", () => {
     const some = <T>(value: T): Option<T> => ({ kind: "some", value });
     const none: Option<never> = { kind: "none" };
 
-    const raiseMaybe = defineHandlerFor<Raise>().with((effected) =>
+    const raiseOption = defineHandlerFor<Raise>().with((effected) =>
       effected.map((value) => some(value)).terminate("raise", () => none),
     );
 
-    const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseMaybe);
+    const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
 
     expect(safeDivide2).to(equal<(a: number, b: number) => Effected<never, Option<number>>>);
   }

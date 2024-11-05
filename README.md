@@ -1067,11 +1067,11 @@ const none: Option<never> = { kind: "none" };
 In previous examples, we used `.map()` and `.terminate()` to transform the return value of `safeDivide` to an `Option` type. Now, we can abstract this logic into a reusable handler:
 
 ```typescript
-const raiseMaybe = defineHandlerFor<Raise>().with((effected) =>
+const raiseOption = defineHandlerFor<Raise>().with((effected) =>
   effected.map((value) => some(value)).terminate("raise", () => none),
 );
 
-const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseMaybe);
+const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
 ```
 
 Hovering over `safeDivide2` reveals this type signature:
