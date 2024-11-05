@@ -12,6 +12,9 @@ node_modules/
 dist/
 *.local
 
+# Coverage
+coverage/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
