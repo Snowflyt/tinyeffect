@@ -613,6 +613,65 @@ test("A deep dive into `resume` and `terminate`", () => {
   }
 });
 
+test("Handling effects with another effected program", () => {
+  {
+    type Ask<T> = Effect<"ask", [], T>;
+    const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
+
+    const double = () =>
+      effected(function* () {
+        return (yield* ask<number>()) + (yield* ask<number>());
+      });
+
+    expect(
+      effected(function* () {
+        return yield* double();
+      })
+        .resume("ask", () => 21)
+        .runSync(),
+    ).toBe(42);
+
+    type Random = Effect<"random", [], number>;
+    const random: EffectFactory<Random> = effect("random");
+
+    expect(
+      effected(function* () {
+        return yield* double();
+      })
+        .resume("ask", function* () {
+          return yield* random();
+        })
+        .resume("random", () => 42)
+        .runSync(),
+    ).toBe(84);
+  }
+
+  {
+    type Emit = Effect<"emit", [msg: string], void>;
+    const emit: EffectFactory<Emit> = effect("emit");
+
+    const program = effected(function* () {
+      yield* emit("hello");
+      yield* emit("world");
+    })
+      .resume("emit", (msg) => emit(`"${msg}"`))
+      .resume("emit", (...args) => console.log(...args));
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    program.runSync();
+    expect(logSpy.mock.calls).toMatchInlineSnapshot(`
+      [
+        [
+          ""hello"",
+        ],
+        [
+          ""world"",
+        ],
+      ]
+    `);
+  }
+});
+
 test("Handling return values", () => {
   type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
   const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
@@ -806,65 +865,6 @@ test("Handling multiple effects in one handler", () => {
         .runSync(),
     ).toEqual(ok([1, 2, 3, 4]));
     expect(logs).toEqual([["Generating range from 1 to 5"]]);
-  }
-});
-
-test("Handling effects with another effected program", () => {
-  {
-    type Ask<T> = Effect<"ask", [], T>;
-    const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
-
-    const double = () =>
-      effected(function* () {
-        return (yield* ask<number>()) + (yield* ask<number>());
-      });
-
-    expect(
-      effected(function* () {
-        return yield* double();
-      })
-        .resume("ask", () => 21)
-        .runSync(),
-    ).toBe(42);
-
-    type Random = Effect<"random", [], number>;
-    const random: EffectFactory<Random> = effect("random");
-
-    expect(
-      effected(function* () {
-        return yield* double();
-      })
-        .resume("ask", function* () {
-          return yield* random();
-        })
-        .resume("random", () => 42)
-        .runSync(),
-    ).toBe(84);
-  }
-
-  {
-    type Emit = Effect<"emit", [msg: string], void>;
-    const emit: EffectFactory<Emit> = effect("emit");
-
-    const program = effected(function* () {
-      yield* emit("hello");
-      yield* emit("world");
-    })
-      .resume("emit", (msg) => emit(`"${msg}"`))
-      .resume("emit", (...args) => console.log(...args));
-
-    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    program.runSync();
-    expect(logSpy.mock.calls).toMatchInlineSnapshot(`
-      [
-        [
-          ""hello"",
-        ],
-        [
-          ""world"",
-        ],
-      ]
-    `);
   }
 });
 

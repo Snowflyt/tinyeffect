@@ -724,6 +724,66 @@ const iterate = <T>(value: T) => effect("iterate")<[value: T], void>(value);
 
 This might look complex at first, but it simply wraps the `effect` function to make it generic. `effect("iterate")` returns a generic generator function, and we pass type arguments to specialize it, then call the function with a value to yield an Effect object.
 
+### Handling effects with another effected program
+
+When you’re working with a large application, you’ll soon encounter situations where handling an effect can introduce one or more new effects.
+
+For example, consider the following program:
+
+```typescript
+type Ask<T> = Effect<"ask", [], T>;
+const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
+
+const double = (): Effected<Ask<number>, number> =>
+  effected(function* () {
+    return (yield* ask<number>()) + (yield* ask<number>());
+  });
+```
+
+What if we want to use a random number to handle the `ask` effect? We could use `Math.random()`, but generating a random number is itself a side effect, so let’s define it as an effect as well:
+
+```typescript
+type Random = Effect<"random", [], number>;
+const random: EffectFactory<Random> = effect("random");
+
+const program = effected(function* () {
+  return yield* double();
+}).resume("ask", function* () {
+  return yield* random();
+});
+```
+
+As shown, when handling effects with other effects (or with other effected programs), you can use a _generator function_ as a handler. The `.handle()` method and its variants support generator functions, allowing you to use `yield*` inside handlers to perform additional effects.
+
+Hovering over the `program` variable reveals its type signature:
+
+```typescript
+const program: Effected<Random, number>;
+```
+
+Here, the `Ask<number>` effect has been handled, but now the program has a new `Random` effect introduced by handling `ask` with `random`.
+
+You can also “override” an effect by yielding the effect itself within the generator function. Consider this example (adapted from the [Koka documentation](https://koka-lang.github.io/koka/doc/book.html#sec-overriding-handlers)):
+
+```typescript
+type Emit = Effect<"emit", [msg: string], void>;
+const emit: EffectFactory<Emit> = effect("emit");
+
+const program = effected(function* () {
+  yield* emit("hello");
+  yield* emit("world");
+})
+  .resume("emit", (msg) => emit(`"${msg}"`))
+  .resume("emit", console.log);
+```
+
+When you run `program.runSync()`, the output will be:
+
+```text
+"hello"
+"world"
+```
+
 ### Handling return values
 
 Sometimes, you may want to transform a program’s return value. Let’s revisit the `safeDivide` example:
@@ -895,66 +955,6 @@ const range3 = (start: number, stop: number) =>
 ```
 
 The `.catchAll()` method takes a function that receives the error effect name and message, and returns a new value. `range3` behaves the same as `range2`, with an identical type signature.
-
-### Handling effects with another effected program
-
-When you’re working with a large application, you’ll soon encounter situations where handling an effect can introduce one or more new effects.
-
-For example, consider the following program:
-
-```typescript
-type Ask<T> = Effect<"ask", [], T>;
-const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
-
-const double = (): Effected<Ask<number>, number> =>
-  effected(function* () {
-    return (yield* ask<number>()) + (yield* ask<number>());
-  });
-```
-
-What if we want to use a random number to handle the `ask` effect? We could use `Math.random()`, but generating a random number is itself a side effect, so let’s define it as an effect as well:
-
-```typescript
-type Random = Effect<"random", [], number>;
-const random: EffectFactory<Random> = effect("random");
-
-const program = effected(function* () {
-  return yield* double();
-}).resume("ask", function* () {
-  return yield* random();
-});
-```
-
-As shown, when handling effects with other effects (or with other effected programs), you can use a _generator function_ as a handler. The `.handle()` method and its variants support generator functions, allowing you to use `yield*` inside handlers to perform additional effects.
-
-Hovering over the `program` variable reveals its type signature:
-
-```typescript
-const program: Effected<Random, number>;
-```
-
-Here, the `Ask<number>` effect has been handled, but now the program has a new `Random` effect introduced by handling `ask` with `random`.
-
-You can also “override” an effect by yielding the effect itself within the generator function. Consider this example (adapted from the [Koka documentation](https://koka-lang.github.io/koka/doc/book.html#sec-overriding-handlers)):
-
-```typescript
-type Emit = Effect<"emit", [msg: string], void>;
-const emit: EffectFactory<Emit> = effect("emit");
-
-const program = effected(function* () {
-  yield* emit("hello");
-  yield* emit("world");
-})
-  .resume("emit", (msg) => emit(`"${msg}"`))
-  .resume("emit", console.log);
-```
-
-When you run `program.runSync()`, the output will be:
-
-```text
-"hello"
-"world"
-```
 
 ### Abstracting/combining handlers
 

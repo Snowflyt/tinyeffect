@@ -330,6 +330,45 @@ test("A deep dive into `resume` and `terminate`", () => {
   expect(program).to(equal<Effected<never, void>>);
 });
 
+test("Handling effects with another effected program", () => {
+  {
+    type Ask<T> = Effect<"ask", [], T>;
+    const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
+
+    const double = (): Effected<Ask<number>, number> =>
+      effected(function* () {
+        return (yield* ask<number>()) + (yield* ask<number>());
+      });
+
+    type Random = Effect<"random", [], number>;
+    const random: EffectFactory<Random> = effect("random");
+
+    const program = effected(function* () {
+      return yield* double();
+    }).resume("ask", function* () {
+      return yield* random();
+    });
+
+    expect(program).to(equal<Effected<Random, number>>);
+  }
+
+  {
+    type Emit = Effect<"emit", [msg: string], void>;
+    const emit: EffectFactory<Emit> = effect("emit");
+
+    const program1 = effected(function* () {
+      yield* emit("hello");
+      yield* emit("world");
+    }).resume("emit", (msg) => emit(`"${msg}"`));
+
+    expect(program1).to(equal<Effected<Emit, void>>);
+
+    const program2 = program1.resume("emit", (...args) => console.log(...args));
+
+    expect(program2).to(equal<Effected<never, void>>);
+  }
+});
+
 test("Handling return values", () => {
   type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
   const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
@@ -464,45 +503,6 @@ test("Handling multiple effects in one handler", () => {
 
     expect<InferEffect<typeof range4>>().to(equal<Log>);
     expect(range4).to(extend(range3));
-  }
-});
-
-test("Handling effects with another effected program", () => {
-  {
-    type Ask<T> = Effect<"ask", [], T>;
-    const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
-
-    const double = (): Effected<Ask<number>, number> =>
-      effected(function* () {
-        return (yield* ask<number>()) + (yield* ask<number>());
-      });
-
-    type Random = Effect<"random", [], number>;
-    const random: EffectFactory<Random> = effect("random");
-
-    const program = effected(function* () {
-      return yield* double();
-    }).resume("ask", function* () {
-      return yield* random();
-    });
-
-    expect(program).to(equal<Effected<Random, number>>);
-  }
-
-  {
-    type Emit = Effect<"emit", [msg: string], void>;
-    const emit: EffectFactory<Emit> = effect("emit");
-
-    const program1 = effected(function* () {
-      yield* emit("hello");
-      yield* emit("world");
-    }).resume("emit", (msg) => emit(`"${msg}"`));
-
-    expect(program1).to(equal<Effected<Emit, void>>);
-
-    const program2 = program1.resume("emit", (...args) => console.log(...args));
-
-    expect(program2).to(equal<Effected<never, void>>);
   }
 });
 
