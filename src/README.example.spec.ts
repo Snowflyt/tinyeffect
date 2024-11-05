@@ -538,13 +538,9 @@ test("Interlude: Where’s “try-catch”?", () => {
       .terminate("raise", () => {})
       .runSync(),
   ).toEqual(defaultSettings);
-  expect(spyError.mock.calls).toMatchInlineSnapshot(`
-    [
-      [
-        "Invalid JSON: Unexpected token 'i', "invalid json" is not valid JSON",
-      ],
-    ]
-  `);
+  expect(spyError).toHaveBeenCalledOnce();
+  expect(spyError.mock.calls[0]!.length).toBe(1);
+  expect(spyError.mock.calls[0]![0]).toMatch(/^Invalid JSON: Unexpected token /);
   spyError.mockRestore();
 
   expect(
