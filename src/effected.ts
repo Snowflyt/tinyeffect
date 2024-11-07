@@ -684,6 +684,8 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * @param message The message of the error. If it is a function, it will be called with the
    * message of the error effect, and the return value will be used as the message of the error.
    * @returns
+   *
+   * @since 0.1.1
    */
   catchAndThrow<Name extends ErrorName<E>>(
     name: Name,
@@ -704,6 +706,8 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * and the message of the error effect, and the return value will be used as the message of the
    * error.
    * @returns
+   *
+   * @since 0.1.1
    */
   catchAllAndThrow(
     message?: string | ((error: string, message?: string) => string | undefined),
