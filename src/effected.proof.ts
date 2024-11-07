@@ -229,7 +229,7 @@ describe("Effected#catchAndThrow", () => {
   });
 });
 
-describe("Effected#catchAndThrowAll", () => {
+describe("Effected#catchAllAndThrow", () => {
   type TypeError = Effect.Error<"type">;
   const typeError: EffectFactory<TypeError> = error("type");
   type RangeError = Effect.Error<"range">;

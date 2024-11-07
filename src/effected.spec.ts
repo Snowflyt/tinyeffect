@@ -666,7 +666,7 @@ describe("Effected#catchAndThrow", () => {
   });
 });
 
-describe("Effected#catchAndThrowAll", () => {
+describe("Effected#catchAllAndThrow", () => {
   const typeError = error("type");
   const rangeError = error("range");
 
