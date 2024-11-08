@@ -736,3 +736,29 @@ describe("Effected#catchAllAndThrow", () => {
     expect(thrown).toBe(true);
   });
 });
+
+describe("Effected.of", () => {
+  it("should create an effected program with a single value", () => {
+    const program = Effected.of(42);
+    expect(program.runSync()).toBe(42);
+  });
+});
+
+describe("Effected.from", () => {
+  it("should create an effected program from a getter", () => {
+    const program = Effected.from(() => 42);
+    expect(program.runSync()).toBe(42);
+  });
+
+  it("should only run the getter once", () => {
+    let count = 0;
+    const program = Effected.from(() => {
+      count++;
+      return 42;
+    });
+    expect(program.runSync()).toBe(42);
+    expect(count).toBe(1);
+    expect(program.runSync()).toBe(42);
+    expect(count).toBe(2);
+  });
+});

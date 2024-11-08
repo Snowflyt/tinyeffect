@@ -202,6 +202,29 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Create an {@link Effected} instance that just returns the value.
+   * @param value The value to return.
+   * @returns
+   *
+   * @since 0.1.2
+   */
+  static of<R>(value: R): Effected<never, R> {
+    return effected(() => ({ next: () => ({ done: true, value }) })) as Effected<never, R>;
+  }
+
+  /**
+   * Create an {@link Effected} instance that just returns the value from a getter.
+   * @param getter The getter to get the value.
+   * @returns
+   */
+  static from<R>(getter: () => R): Effected<never, R> {
+    return effected(() => ({ next: () => ({ done: true, value: getter() }) })) as Effected<
+      never,
+      R
+    >;
+  }
+
+  /**
    * Handle an effect with a handler.
    *
    * For more common use cases, see {@link resume} and {@link terminate}, which provide a more
