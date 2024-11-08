@@ -1132,3 +1132,34 @@ For more complex cases where `defineHandlerFor` isn’t sufficient, you can stil
 const range = (start: number, stop: number) => range(start, stop).with(handleErrorAsResult);
 const range = (start: number, stop: number) => handleErrorAsResult(range(start, stop));
 ```
+
+### Effects without generators
+
+The fundamental logic of tinyeffect is _not_ dependent on generators. An effected program (represented as an `Effected` instance) is essentially an iterable object that implements a `[Symbol.iterator](): Iterator<Effect>` method. Although using the `effected` helper function in conjunction with a generator allows you to write more imperative-style code with `yield*` to manage effects, this is not the only way to handle them.
+
+In fact, `effected` can accept any function that returns an iterator of effects — specifically, any function that returns an object implementing a `.next()` method that outputs objects with `value` and `done` properties.
+
+It is not even necessary to use `effected` to construct an effected program. You can also create them using `Effected.of()` or `Effected.from()`. Here are two equivalent examples:
+
+```typescript
+const fib1 = (n: number): Effected<never, number> =>
+  effected(function* () {
+    if (n <= 1) return n;
+    return (yield* fib1(n - 1)) + (yield* fib1(n - 2));
+  });
+
+const fib2 = (n: number): Effected<never, number> => {
+  if (n <= 1) return Effected.of(n);
+  // Or use `Effected.from` with a getter:
+  // if (n <= 1) return Effected.from(() => n);
+  return fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b));
+};
+```
+
+> [!NOTE]
+>
+> The above example is purely for illustrative purposes and _should not_ be used in practice. While it demonstrates how effects can be handled, it mimics the behavior of a simple fib function with unnecessary complexity and overhead, which could greatly degrade performance.
+
+Understanding the definition of `fib2` may take some time, but it serves as an effective demonstration of working with effects without generators. The expression `fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b))` can be interpreted as follows: “After resolving `fib2(n - 1)`, assign the result to `a`, then resolve `fib2(n - 2)` and assign the result to `b`. Finally, return `a + b`.”
+
+It’s important to note that the first `.map()` call behaves like a `flatMap` operation, as it takes a function that returns another `Effected` instance and “flattens” the result. However, in tinyeffect, the distinction between `map` and `flatMap` is not explicit — `.map()` will automatically flatten the result if it’s an `Effected` instance. This allows for seamless chaining of `.map()` calls as needed.

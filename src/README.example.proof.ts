@@ -3,9 +3,9 @@
 
 import { equal, expect, extend, test, error as triggerError } from "typroof";
 
-import { defineHandlerFor, dependency, effect, effected, effectify, error } from ".";
+import { Effected, defineHandlerFor, dependency, effect, effected, effectify, error } from ".";
 
-import type { Effect, EffectFactory, Effected, InferEffect, UnhandledEffect, Unresumable } from ".";
+import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from ".";
 
 type User = { id: number; name: string; role: "admin" | "user" };
 
@@ -615,4 +615,12 @@ test("Abstracting handlers", () => {
 
     expect(safeDivide2).to(equal<(a: number, b: number) => Effected<never, Option<number>>>);
   }
+});
+
+test("Effects without generators", () => {
+  expect(Effected.of(42)).not.to(triggerError);
+  expect(Effected.of(42)).to(equal<Effected<never, number>>);
+
+  expect(Effected.from(() => 42)).not.to(triggerError);
+  expect(Effected.from(() => 42)).to(equal<Effected<never, number>>);
 });

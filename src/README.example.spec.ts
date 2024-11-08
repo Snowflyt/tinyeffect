@@ -4,6 +4,7 @@
 import { expect, test, vi } from "vitest";
 
 import {
+  Effected,
   UnhandledEffectError,
   defineHandlerFor,
   dependency,
@@ -13,7 +14,7 @@ import {
   error,
 } from ".";
 
-import type { Effect, EffectFactory, Effected, Unresumable } from ".";
+import type { Effect, EffectFactory, Unresumable } from ".";
 
 test("banner", async () => {
   type User = { id: number; name: string; role: "admin" | "user" };
@@ -1107,4 +1108,26 @@ test("Abstracting handlers", () => {
     expect(safeDivide2(1, 0).runSync()).toEqual(none);
     expect(safeDivide2(1, 2).runSync()).toEqual(some(0.5));
   }
+});
+
+test("Effects without generators", () => {
+  const fib1 = (n: number): Effected<never, number> =>
+    effected(function* () {
+      if (n <= 1) return n;
+      return (yield* fib1(n - 1)) + (yield* fib1(n - 2));
+    });
+
+  const fib2 = (n: number): Effected<never, number> => {
+    if (n <= 1) return Effected.of(n);
+    return fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b));
+  };
+
+  const fib3 = (n: number): Effected<never, number> => {
+    if (n <= 1) return Effected.from(() => n);
+    return fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b));
+  };
+
+  expect(fib1(10).runSync()).toBe(55);
+  expect(fib2(10).runSync()).toBe(55);
+  expect(fib3(10).runSync()).toBe(55);
 });
