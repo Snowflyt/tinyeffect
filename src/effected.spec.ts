@@ -23,26 +23,28 @@ const log = effect("log")<unknown[], void>;
 const raise = effect("raise", { resumable: false })<[error: unknown], never>;
 
 describe("effect", () => {
-  it("should create a generator function yielding a single `Effect`", () => {
+  it("should create a function that returns an `Effected` instance which yields a single `Effect`", () => {
     {
-      const it = add42(42);
+      const it = add42(42)[Symbol.iterator]();
       const result = it.next();
       expect(result).toEqual({ value: { name: "add42", payloads: [42] }, done: false });
       expect(result.value).toBeInstanceOf(Effect);
       expect(it.next(84)).toEqual({ value: 84, done: true });
+      expect(it.next()).toEqual({ done: true });
     }
 
     {
-      const it = now();
+      const it = now()[Symbol.iterator]();
       const result = it.next();
       expect(result).toEqual({ value: { name: "dependency:now", payloads: [] }, done: false });
       expect(result.value).toBeInstanceOf(Effect);
       const time = new Date();
       expect(it.next(time)).toEqual({ value: time, done: true });
+      expect(it.next()).toEqual({ done: true });
     }
 
     {
-      const it = log("hello", "world", 42);
+      const it = log("hello", "world", 42)[Symbol.iterator]();
       const result = it.next();
       expect(result).toEqual({
         value: { name: "log", payloads: ["hello", "world", 42] },
@@ -50,11 +52,12 @@ describe("effect", () => {
       });
       expect(result.value).toBeInstanceOf(Effect);
       expect(it.next()).toEqual({ value: undefined, done: true });
+      expect(it.next()).toEqual({ done: true });
     }
   });
 
   it("should create unresumable effects", () => {
-    const it = raise("error");
+    const it = raise("error")[Symbol.iterator]();
     const result = it.next();
     expect(result).toEqual({
       value: { name: "raise", payloads: ["error"], resumable: false },
@@ -67,8 +70,8 @@ describe("effect", () => {
 const typeError = error("type");
 
 describe("error", () => {
-  it("should create a generator function yielding an unresumable error effect", () => {
-    const it = typeError("type error");
+  it("should create a function that returns an `Effected` instance which yields a single `Effect.Error`", () => {
+    const it = typeError("type error")[Symbol.iterator]();
     const result = it.next();
     expect(result).toEqual({
       value: { name: "error:type", payloads: ["type error"], resumable: false },
@@ -81,8 +84,8 @@ describe("error", () => {
 const askNumber = dependency("number")<number>;
 
 describe("dependency", () => {
-  it("should create a generator function yielding a single `Effect.Dependency`", () => {
-    const it = askNumber();
+  it("should create a function that returns an `Effected` instance which yields a single `Effect.Dependency`", () => {
+    const it = askNumber()[Symbol.iterator]();
     const result = it.next();
     expect(result).toEqual({
       value: { name: "dependency:number", payloads: [] },
@@ -90,6 +93,22 @@ describe("dependency", () => {
     });
     expect(result.value).toBeInstanceOf(Effect);
     expect(it.next(42)).toEqual({ value: 42, done: true });
+    expect(it.next()).toEqual({ done: true });
+  });
+});
+
+describe("effectify", () => {
+  it("should transform a promise into an `Effected` instance", () => {
+    const effected = effectify(Promise.resolve(42));
+    expect(effected).toBeInstanceOf(Effected);
+    const it = effected[Symbol.iterator]();
+    const result = it.next();
+    expect(result).toEqual({
+      value: { _effectAsync: true, onComplete: expect.any(Function) },
+      done: false,
+    });
+    expect(it.next(42)).toEqual({ value: 42, done: true });
+    expect(it.next()).toEqual({ done: true });
   });
 });
 

@@ -101,4 +101,4 @@ export type InferEffect<E extends Iterable<Effect> | ((...args: any) => Iterable
  */
 export type EffectFactory<E extends Effect> = (
   ...payloads: E["payloads"]
-) => Generator<E, E["__returnType"], unknown>;
+) => Effected<E, E["__returnType"]>;

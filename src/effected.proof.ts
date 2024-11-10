@@ -13,22 +13,16 @@ const log = effect("log")<unknown[], void>;
 const raise = effect("raise", { resumable: false })<[error: unknown], never>;
 
 describe("effect", () => {
-  it("should create a generator function yielding a single `Effect`", () => {
-    expect(add42).to(
-      equal<(n: number) => Generator<Effect<"add42", [n: number], number>, number, unknown>>,
-    );
-    expect(now).to(equal<() => Generator<Effect<"now", [], Date>, Date, unknown>>);
-    expect(log).to(
-      equal<(...args: unknown[]) => Generator<Effect<"log", unknown[], void>, void, unknown>>,
-    );
+  it("should create a function that returns an `Effected` instance which yields a single `Effect`", () => {
+    expect(add42).to(equal<(n: number) => Effected<Effect<"add42", [n: number], number>, number>>);
+    expect(now).to(equal<() => Effected<Effect<"now", [], Date>, Date>>);
+    expect(log).to(equal<(...args: unknown[]) => Effected<Effect<"log", unknown[], void>, void>>);
   });
 
   it("should create unresumable effects", () => {
     expect(raise).to(
       equal<
-        (
-          error: unknown,
-        ) => Generator<Unresumable<Effect<"raise", [error: unknown], never>>, never, unknown>
+        (error: unknown) => Effected<Unresumable<Effect<"raise", [error: unknown], never>>, never>
       >,
     );
   });
@@ -46,15 +40,14 @@ describe("effect", () => {
 const typeError = error("type");
 
 describe("error", () => {
-  it("should create a generator function yielding an unresumable error effect", () => {
+  it("should create a function that returns an `Effected` instance which yields a single `Effect.Error`", () => {
     expect(typeError).to(
       equal<
         (
           message?: string,
-        ) => Generator<
+        ) => Effected<
           Unresumable<Effect<"error:type", [message?: string | undefined], never>>,
-          never,
-          unknown
+          never
         >
       >,
     );
@@ -71,10 +64,8 @@ describe("error", () => {
 const askNumber = dependency("number")<number>;
 
 describe("dependency", () => {
-  it("should create a generator function yielding a single `Effect.Dependency`", () => {
-    expect(askNumber).to(
-      equal<() => Generator<Effect.Dependency<"number", number>, number, unknown>>,
-    );
+  it("should create a function that returns an `Effected` instance which yields a single `Effect.Dependency`", () => {
+    expect(askNumber).to(equal<() => Effected<Effect.Dependency<"number", number>, number>>);
   });
 
   it("should be inferred as an `Effect` type by the `InferEffect` utility type", () => {

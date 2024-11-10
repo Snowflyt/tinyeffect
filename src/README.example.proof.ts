@@ -206,9 +206,7 @@ test("The `Effect` type > Unresumable effects", () => {
 
   expect(raise).to(
     equal<
-      (
-        error: unknown,
-      ) => Generator<Unresumable<Effect<"raise", [error: unknown], never>>, never, unknown>
+      (error: unknown) => Effected<Unresumable<Effect<"raise", [error: unknown], never>>, never>
     >,
   );
 
@@ -296,7 +294,7 @@ test("A deep dive into `resume` and `terminate`", () => {
 test("Handling effects with another effected program", () => {
   {
     type Ask<T> = Effect<"ask", [], T>;
-    const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
+    const ask = <T>(): Effected<Ask<T>, T> => effect("ask")();
 
     const double = (): Effected<Ask<number>, number> =>
       effected(function* () {
@@ -567,9 +565,8 @@ test("Abstracting handlers", () => {
   {
     type State<T> = Effect<"state.get", [], T> | Effect<"state.set", [value: T], void>;
     const state = {
-      get: <T>(): Generator<State<T>, T, unknown> => effect("state.get")<[], T>(),
-      set: <T>(value: T): Generator<State<T>, void, unknown> =>
-        effect("state.set")<[value: T], void>(value),
+      get: <T>(): Effected<State<T>, T> => effect("state.get")<[], T>(),
+      set: <T>(value: T): Effected<State<T>, void> => effect("state.set")<[value: T], void>(value),
     };
 
     const sumDown = (sum: number = 0): Effected<State<number>, number> =>

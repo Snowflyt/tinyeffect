@@ -397,44 +397,12 @@ export interface Effect<
 
 At runtime, only `name` and `payloads` are present, while `__returnType` serves purely at the type level to infer the effect’s return type.
 
-Using `yield*` with a factory function created by `effect` (or its variants) yields an `Effect` object. The `effect` function itself can be simplified as follows:
-
-```typescript
-function effect<Name extends string | symbol>(
-  name: Name,
-): <Payloads extends unknown[], R>(
-  ...payloads: Payloads
-) => Generator<Effect<Name, Payloads, R>, R, unknown> {
-  return function* (...payloads) {
-    return yield { name: name, payloads };
-  };
-}
-
-function error<Name extends string>(
-  name: Name,
-): <Payloads extends unknown[]>(
-  message?: string,
-) => Generator<Unresumable<Effect<`error:${Name}`, Payloads, never>>, never, unknown> {
-  return function* (...payloads) {
-    return yield { name: `error:${name}`, payloads, resumable: false };
-  };
-}
-
-function dependency<Name extends string>(
-  name: Name,
-): <R>() => Generator<Effect<`dependency:${Name}`, [], R>, R, unknown> {
-  return function* () {
-    return yield { name: `dependency:${name}`, payloads: [] };
-  };
-}
-```
-
-To keep things simple, let’s remove the type signatures and focus on the structure:
+Using `yield*` with a factory function created by `effect` (or its variants) yields an `Effect` object. To understand how it works, let’s take a look at a simplified version of the `effect` function (and its variants) in JavaScript:
 
 ```typescript
 function effect(name) {
   return function* (...payloads) {
-    return yield { name: name, payloads };
+    return yield { name, payloads };
   };
 }
 
@@ -450,6 +418,8 @@ function dependency(name) {
   };
 }
 ```
+
+While the actual implementation of `effect` is more complex and returns a factory function that produces an `Effected` instance (instead of a generator function), the fundamental concept remains the same.
 
 The mechanism of `.runSync()` and `.runAsync()` is also straightforward. These methods iterate through the generator function, and when encountering an `Effect` object, invoke the corresponding handler registered by `.handle()`. They then either resume or terminate the generator with the value passed to `resume` or `terminate`. The actual implementation is more complex, but the concept remains consistent.
 
@@ -539,7 +509,7 @@ When you hover over the `raise` variable, you’ll see its `Effect` type is wrap
 ```typescript
 const raise: (
   error: unknown,
-) => Generator<Unresumable<Effect<"raise", [error: unknown], never>>, never, unknown>;
+) => Effected<Unresumable<Effect<"raise", [error: unknown], never>>, never>;
 ```
 
 Attempting to handle an unresumable effect with `.resume()` will result in a TypeScript error:
@@ -681,7 +651,7 @@ type Iterate<T> = Effect<"iterate", [value: T], void>;
 const iterate = <T>(value: T) => effect("iterate")<[value: T], void>(value);
 ```
 
-This might look complex at first, but it simply wraps the `effect` function to make it generic. `effect("iterate")` returns a generic generator function, and we pass type arguments to specialize it, then call the function with a value to yield an Effect object.
+This might look complex at first, but it simply wraps the `effect` function to make it generic. `effect("iterate")` returns a generic factory function that produces an `Effected` instance, and we pass type arguments to specialize it, then call the function with a value to yield an `Effect` object.
 
 ### Handling effects with another effected program
 
@@ -691,7 +661,7 @@ For example, consider the following program:
 
 ```typescript
 type Ask<T> = Effect<"ask", [], T>;
-const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
+const ask = <T>(): Effected<Ask<T>, T> => effect("ask")();
 
 const double = (): Effected<Ask<number>, number> =>
   effected(function* () {
@@ -1015,9 +985,8 @@ To group these together, we could define them as:
 ```typescript
 type State<T> = Effect<"state.get", [], T> | Effect<"state.set", [value: T], void>;
 const state = {
-  get: <T>(): Generator<State<T>, T, unknown> => effect("state.get")<[], T>(),
-  set: <T>(value: T): Generator<State<T>, void, unknown> =>
-    effect("state.set")<[value: T], void>(value),
+  get: <T>(): Effected<State<T>, T> => effect("state.get")<[], T>(),
+  set: <T>(value: T): Effected<State<T>, void> => effect("state.set")<[value: T], void>(value),
 };
 ```
 

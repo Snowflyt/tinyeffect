@@ -114,7 +114,7 @@ test("3.4.1. Handling", async () => {
 
 test("3.4.2. Resuming", () => {
   type Ask<T> = Effect<"ask", [], T>;
-  const ask = <T>(): Generator<Ask<T>, T, unknown> => effect("ask")();
+  const ask = <T>(): Effected<Ask<T>, T> => effect("ask")();
 
   const addTwice = () =>
     effected(function* () {
@@ -219,8 +219,8 @@ test("3.4.4. Abstracting Handlers", () => {
 
 type State<T> = Effect<"state.get", [], T> | Effect<"state.set", [T], void>;
 const state = {
-  get: <T>(): Generator<State<T>, T, unknown> => effect("state.get")<[], T>(),
-  set: <T>(x: T): Generator<State<T>, void, unknown> => effect("state.set")<[T], void>(x),
+  get: <T>(): Effected<State<T>, T> => effect("state.get")<[], T>(),
+  set: <T>(x: T): Effected<State<T>, void> => effect("state.set")<[T], void>(x),
 };
 const stateHandler = <T>({ get, set }: { get: () => T; set: (x: T) => void }) =>
   defineHandlerFor<State<T>>().with((effected) =>

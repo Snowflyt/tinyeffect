@@ -4,8 +4,10 @@ import { Effect } from "./types";
 import type { UnhandledEffect, Unresumable } from "./types";
 
 /**
- * Create a generator function yielding a single {@link Effect} instance (algebraic effect). Can
- * be used with {@link effected} to create an effected program.
+ * Create a function that returns an {@link Effected} instance (an effected program) which yields a
+ * single {@link Effect} instance (algebraic effect) and returns the handled value. The returned
+ * function can be utilized with {@link effected} to compose and integrate into a more complex
+ * effected program.
  *
  * For special cases, see {@link error} (for non-resumable error effects) and {@link dependency}
  * (for dependency injection).
@@ -37,21 +39,43 @@ export function effect<Name extends string | symbol, Resumable extends boolean =
 ): [Resumable] extends [false] ?
   <Payloads extends unknown[], R extends never = never>(
     ...payloads: Payloads
-  ) => Generator<Unresumable<Effect<Name, Payloads, R>>, R, unknown>
-: <Payloads extends unknown[], R>(
-    ...payloads: Payloads
-  ) => Generator<Effect<Name, Payloads, R>, R, unknown> {
-  const result = function* (...payloads: unknown[]) {
-    return (yield Object.assign(new Effect(name, payloads), options)) as never;
-  };
-  // Add a `name` property for better debugging experience
-  Object.defineProperty(result, "name", { value: name });
-  return result as never;
+  ) => Effected<Unresumable<Effect<Name, Payloads, R>>, R>
+: <Payloads extends unknown[], R>(...payloads: Payloads) => Effected<Effect<Name, Payloads, R>, R> {
+  const result = (...payloads: unknown[]) =>
+    effected(() => {
+      let state = 0;
+      return {
+        next: (...args) => {
+          switch (state) {
+            case 0:
+              state++;
+              return {
+                done: false,
+                value:
+                  options && options.resumable === false ?
+                    Object.assign(new Effect(name, payloads), { resumable: false })
+                  : new Effect(name, payloads),
+              };
+            case 1:
+              state++;
+              return {
+                done: true,
+                ...(args.length > 0 ? { value: args[0] } : {}),
+              } as IteratorReturnResult<unknown>;
+            default:
+              return { done: true } as IteratorReturnResult<unknown>;
+          }
+        },
+      };
+    });
+  if (options && (options as any)._overrideFunctionName === false) return result as never;
+  return renameFunction(result, typeof name === "string" ? name : name.description || "") as never;
 }
 
 /**
- * Create a generator function yielding a single {@link Effect} instance for typical errors (i.e.,
- * non-resumable effect with name prefixed with "error:").
+ * Create a function that returns an {@link Effected} instance (an effected program) which yields a
+ * single {@link Effect} instance for typical errors (i.e., non-resumable effect with name prefixed
+ * with "error:").
  *
  * It can be seen as an alias of `effect("error:" + name, { resumable: false })`.
  *
@@ -76,24 +100,25 @@ export function effect<Name extends string | symbol, Resumable extends boolean =
  *
  * @see {@link effect}
  */
-export function error<Name extends string>(name: Name) {
-  const result = function* (
-    ...payloads: [message?: string]
-  ): Generator<Unresumable<Effect<`error:${Name}`, [message?: string], never>>, never, unknown> {
-    return (yield Object.assign(new Effect(`error:${name}`, payloads), {
-      resumable: false,
-    }) as never) as never;
-  };
-  // Add a `name` property for better debugging experience
-  Object.defineProperty(result, "name", { value: `throw${capitalize(name)}Error` });
-  return result;
+export function error<Name extends string>(
+  name: Name,
+): (
+  message?: string,
+) => Effected<Unresumable<Effect<`error:${Name}`, [message?: string], never>>, never> {
+  return renameFunction(
+    effect(`error:${name}`, { resumable: false, _overrideFunctionName: false } as {
+      resumable: false;
+    }),
+    `throw${capitalize(name)}Error`,
+  );
 }
 
 type ErrorName<E extends Effect> =
   E extends Unresumable<Effect<`error:${infer Name}`, any, never>> ? Name : never;
 
 /**
- * Create a generator function yielding a single {@link Effect} instance for dependency injection.
+ * Create a function that returns an {@link Effected} instance (an effected program) which yields a
+ * single {@link Effect} instance for dependency injection.
  *
  * It can be seen as an alias of `effect("dependency:" + name)`.
  *
@@ -118,13 +143,13 @@ type ErrorName<E extends Effect> =
  *
  * @see {@link effect}
  */
-export function dependency<Name extends string>(name: Name) {
-  const result = function* <R>(): Generator<Effect<`dependency:${Name}`, [], R>, R, unknown> {
-    return (yield new Effect(`dependency:${name}`, [])) as never;
-  };
-  // Add a `name` property for better debugging experience
-  Object.defineProperty(result, "name", { value: `ask${capitalize(name)}` });
-  return result;
+export function dependency<Name extends string>(
+  name: Name,
+): <R>() => Effected<Effect<`dependency:${Name}`, [], R>, R> {
+  return renameFunction(
+    effect(`dependency:${name}`, { _overrideFunctionName: false } as {}),
+    `ask${capitalize(name)}`,
+  );
 }
 
 type DependencyName<E extends Effect> =
@@ -1168,8 +1193,7 @@ export function effected<E extends Effect, R>(fn: () => Iterator<E, R, unknown>)
 }
 
 /**
- * Convert a {@link Promise} to a generator containing a single {@link Effect} that can be used in
- * an effected program.
+ * Convert a {@link Promise} to an effected program containing a single {@link Effect}.
  * @param promise The promise to effectify.
  * @returns
  *
@@ -1185,12 +1209,35 @@ export function effected<E extends Effect, R>(fn: () => Iterator<E, R, unknown>)
  * });
  * ```
  */
-export function* effectify<T>(promise: Promise<T>): Generator<never, T, unknown> {
-  return (yield {
-    _effectAsync: true,
-    onComplete: (...args: [onComplete: (value: T) => void, onThrow?: (value: unknown) => void]) =>
-      promise.then(...args),
-  } as never) as never;
+export function effectify<T>(promise: Promise<T>): Effected<never, T> {
+  return effected(() => {
+    let state = 0;
+    return {
+      next: (...args) => {
+        switch (state) {
+          case 0:
+            state++;
+            return {
+              done: false,
+              value: {
+                _effectAsync: true,
+                onComplete: (
+                  ...args: [onComplete: (value: T) => void, onThrow?: (value: unknown) => void]
+                ) => promise.then(...args),
+              } as never,
+            };
+          case 1:
+            state++;
+            return {
+              done: true,
+              ...(args.length > 0 ? { value: args[0] } : {}),
+            } as IteratorReturnResult<T>;
+          default:
+            return { done: true } as IteratorReturnResult<T>;
+        }
+      },
+    };
+  });
 }
 
 /**
@@ -1324,6 +1371,20 @@ const capitalize = (str: string) => {
   if (str.length === 0) return str;
   return str[0]!.toUpperCase() + str.slice(1);
 };
+
+/**
+ * Change the name of a function for better debugging experience.
+ * @param fn The function to rename.
+ * @param name The new name of the function.
+ * @returns
+ */
+const renameFunction = <F extends (...args: never) => unknown>(fn: F, name: string): F =>
+  Object.defineProperty(fn, "name", {
+    value: name,
+    writable: false,
+    enumerable: false,
+    configurable: true,
+  });
 
 const buildErrorClass = (name: string) => {
   const ErrorClass = class extends Error {
