@@ -409,6 +409,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
 
     return effected(() => {
       const iterator = this[Symbol.iterator]();
+      let interceptIterator: typeof iterator | null = null;
       let terminated: false | "with-value" | "without-value" = false;
       let terminatedValue: unknown;
 
@@ -420,7 +421,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
               ...(terminated === "with-value" ? { value: terminatedValue } : {}),
             } as IteratorReturnResult<unknown>;
 
-          const result = iterator.next(...args);
+          const result = (interceptIterator || iterator).next(...args);
 
           const { done, value } = result;
           if (done) return result;
@@ -515,16 +516,17 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
               return { done: false, value: constructHandledEffect() } as never;
 
             const it = handlerResult[Symbol.iterator]();
-            const next = iterator.next.bind(iterator);
-            iterator.next = (...args: [] | [unknown]) => {
-              const result = it.next(...args);
-              if (result.done) {
-                iterator.next = next;
-                return { done: false, value: constructHandledEffect() } as never;
-              }
-              return result as never;
+            interceptIterator = {
+              next: (...args: [] | [unknown]) => {
+                const result = it.next(...args);
+                if (result.done) {
+                  interceptIterator = null;
+                  return { done: false, value: constructHandledEffect() } as never;
+                }
+                return result as never;
+              },
             };
-            return iterator.next();
+            return interceptIterator.next();
           }
 
           return result;
