@@ -18,7 +18,7 @@ const config = {
   parserOptions: {
     ecmaVersion: "latest",
     sourceType: "module",
-    project: ["./tsconfig.json", "./tsconfig.eslint.json"],
+    project: ["./tsconfig.json", "./tsconfig.test.json", "./tsconfig.eslint.json"],
     tsconfigRootDir: __dirname,
   },
   ignorePatterns: ["!.lintstagedrc.js"],

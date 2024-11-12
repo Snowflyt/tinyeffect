@@ -69,7 +69,10 @@ export function effect<Name extends string | symbol, Resumable extends boolean =
       };
     });
   if (options && (options as any)._overrideFunctionName === false) return result as never;
-  return renameFunction(result, typeof name === "string" ? name : name.description || "") as never;
+  return renameFunction(
+    result,
+    typeof name === "string" ? name : name.toString().slice(7, -1) || "",
+  ) as never;
 }
 
 /**
@@ -220,7 +223,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
 
   private constructor(fn: () => Iterator<E, R, unknown>, magicWords?: string) {
     if (magicWords !== "Yes, I’m sure I want to call the constructor of Effected directly.")
-      console.warn(
+      logger.warn(
         "You should not call the constructor of `Effected` directly. Use `effected` instead.",
       );
 
@@ -364,7 +367,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
                 if (terminated === "with-value") message += ` with ${stringify(terminatedValue)}`;
               }
               message += "). Only the first handler will be used.";
-              console.warn(message);
+              logger.warn(message);
             };
             const resume = (...args: [] | [R]) => {
               if (resumed || terminated) {
@@ -1198,7 +1201,7 @@ const stringify = (x: unknown, space: number = 0): string => {
   const indent = (level: number): string => (space > 0 ? " ".repeat(level * space) : "");
 
   const serialize = (value: unknown, level: number): string => {
-    if (typeof value === "bigint") return `${value}n`;
+    if (typeof value === "bigint") return `${value as any}n`;
     if (typeof value === "function")
       return value.name ? `[Function: ${value.name}]` : "[Function (anonymous)]";
     if (typeof value === "symbol") return value.toString();
@@ -1219,7 +1222,7 @@ const stringify = (x: unknown, space: number = 0): string => {
           .map((item) => serialize(item, nextLevel))
           .join(space > 0 ? `,\n${indent(nextLevel)}` : ", ");
         let result = `[${space > 0 ? "\n" + indent(nextLevel) : ""}${arrayItems}${space > 0 ? "\n" + indent(level) : ""}]`;
-        if (className !== "Array ") result = `${className.trimEnd()}(${value.length}) ${result}`;
+        if (className !== "Array ") result = `${className.trim()}(${value.length}) ${result}`;
         return result;
       }
 
@@ -1242,3 +1245,24 @@ const stringify = (x: unknown, space: number = 0): string => {
 
   return serialize(x, 0);
 };
+
+// `console` is not standard in JavaScript. Though rare, it is possible that `console` is not
+// available in some environments. We use a proxy to handle this case and ignore errors if `console`
+// is not available.
+const logger: {
+  debug(...data: unknown[]): void;
+  error(...data: unknown[]): void;
+  log(...data: unknown[]): void;
+  warn(...data: unknown[]): void;
+} = new Proxy({} as never, {
+  get:
+    (_, prop) =>
+    (...args: unknown[]) => {
+      try {
+        // @ts-expect-error - Cannot find name 'console'
+        console[prop](...args);
+      } catch {
+        // Ignore
+      }
+    },
+});
