@@ -430,13 +430,18 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
               ...effect.payloads,
             );
 
-            if (!(handlerResult instanceof Effected) && !isGenerator(handlerResult))
+            if (
+              !(handlerResult instanceof Effected) &&
+              !isGenerator(handlerResult) &&
+              !isEffectedIterator(handlerResult)
+            )
               return { done: false, value: constructHandledEffect() } as never;
 
-            const it = handlerResult[Symbol.iterator]();
+            const iter =
+              Symbol.iterator in handlerResult ? handlerResult[Symbol.iterator]() : handlerResult;
             interceptIterator = {
               next: (...args: [] | [unknown]) => {
-                const result = it.next(...args);
+                const result = iter.next(...args);
                 if (result.done) {
                   interceptIterator = null;
                   return { done: false, value: constructHandledEffect() } as never;
@@ -480,9 +485,15 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
     return this.handle(effect, (({ resume }: any, ...payloads: unknown[]) => {
       const it = handler(...payloads);
       if (!(it instanceof Effected) && !isGenerator(it)) return resume(it);
-      return (function* () {
-        resume(yield* it);
-      })();
+      const iterator = it[Symbol.iterator]();
+      return {
+        _effectedIterator: true,
+        next: (...args: [] | [unknown]) => {
+          const result = iterator.next(...args);
+          if (result.done) return { done: true, value: resume(result.value) };
+          return result;
+        },
+      };
     }) as never);
   }
 
@@ -521,9 +532,15 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
     return this.handle(effect, (({ terminate }: any, ...payloads: unknown[]) => {
       const it = handler(...payloads);
       if (!(it instanceof Effected) && !isGenerator(it)) return terminate(it);
-      return (function* () {
-        terminate(yield* it);
-      })();
+      const iterator = it[Symbol.iterator]();
+      return {
+        _effectedIterator: true,
+        next: (...args: [] | [unknown]) => {
+          const result = iterator.next(...args);
+          if (result.done) return { done: true, value: terminate(result.value) };
+          return result;
+        },
+      };
     }) as never);
   }
 
@@ -549,8 +566,9 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
           if (!result.done) return result;
           originalIteratorDone = true;
           const it = handler(result.value);
-          if (!(it instanceof Effected) && !isGenerator(it)) return { done: true, value: it };
-          appendedIterator = it[Symbol.iterator]();
+          if (!(it instanceof Effected) && !isGenerator(it) && !isEffectedIterator(it))
+            return { done: true, value: it };
+          appendedIterator = Symbol.iterator in it ? it[Symbol.iterator]() : it;
           return appendedIterator.next();
         },
       };
@@ -570,10 +588,15 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
     return this.map((value) => {
       const it = handler(value);
       if (!(it instanceof Effected) && !isGenerator(it)) return value;
-      return (function* () {
-        yield* it;
-        return value;
-      })();
+      const iterator = it[Symbol.iterator]();
+      return {
+        _effectedIterator: true,
+        next: (...args: [] | [unknown]) => {
+          const result = iterator.next(...args);
+          if (result.done) return { done: true, value };
+          return result;
+        },
+      };
     }) as never;
   }
 
@@ -617,9 +640,15 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
         const error = effect.name.slice(6) as ErrorName<E>;
         const it = handler(error, ...payloads);
         if (!(it instanceof Effected) && !isGenerator(it)) return terminate(it);
-        return (function* () {
-          terminate(yield* it);
-        })();
+        const iterator = it[Symbol.iterator]();
+        return {
+          _effectedIterator: true,
+          next: (...args: [] | [unknown]) => {
+            const result = iterator.next(...args);
+            if (result.done) return { done: true, value: terminate(result.value) };
+            return result;
+          },
+        };
       }) as never,
     );
   }
@@ -1082,6 +1111,20 @@ export function runAsync<E extends Effected<Effect, unknown>>(
  */
 const isGenerator = (value: unknown): value is Generator =>
   Object.prototype.toString.call(value) === "[object Generator]";
+
+/**
+ * Check if a value is an `EffectedIterator` (i.e., an {@link Iterator} with an `_effectedIterator`
+ * property set to `true`).
+ *
+ * This is only used internally as an alternative to generators to reduce the overhead of creating
+ * generator functions.
+ * @param value
+ * @returns
+ */
+const isEffectedIterator = (
+  value: unknown,
+): value is Iterator<Effect, unknown, unknown> & { _effectedIterator: true } =>
+  typeof value === "object" && value !== null && (value as any)._effectedIterator === true;
 
 /**
  * Capitalize the first letter of a string.
