@@ -50,7 +50,15 @@ const config = {
         "newlines-between": "always",
       },
     ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector: "CallExpression[callee.property.name='push'] > SpreadElement.arguments",
+        message: "Do not use spread arguments in Array#push",
+      },
+    ],
     "no-undef": "off",
+    "object-shorthand": "error",
     "sonarjs/cognitive-complexity": "off",
     "sonarjs/no-duplicate-string": "off",
     "sort-destructure-keys/sort-destructure-keys": "error",
