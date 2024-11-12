@@ -671,6 +671,29 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Tap the return value of the effected program.
+   * @param handler The function to tap the return value.
+   * @returns
+   *
+   * @since 0.2.1
+   */
+  tap<F extends Effect = never>(handler: (value: R) => Effected<F, void>): Effected<E | F, R>;
+  tap<F extends Effect = never>(
+    handler: (value: R) => Generator<F, void, unknown>,
+  ): Effected<E | F, R>;
+  tap(handler: (value: R) => void): Effected<E, R>;
+  tap(handler: (value: R) => unknown): Effected<E, unknown> {
+    return this.map((value) => {
+      const it = handler(value);
+      if (!(it instanceof Effected) && !isGenerator(it)) return value;
+      return (function* () {
+        yield* it;
+        return value;
+      })();
+    });
+  }
+
+  /**
    * Catch an error effect with a handler.
    *
    * It is a shortcut for `terminate("error:" + name, handler)`.
@@ -1060,6 +1083,16 @@ interface EffectedDraft<
       handler: (value: R) => Generator<F, S, unknown>,
     ): EffectedDraft<P, E | F, S>;
     <S>(handler: (value: R) => S): EffectedDraft<P, E, S>;
+  };
+
+  readonly tap: {
+    <F extends Effect = never>(
+      handler: (value: R) => Effected<F, void>,
+    ): EffectedDraft<P, E | F, R>;
+    <F extends Effect = never>(
+      handler: (value: R) => Generator<F, void, unknown>,
+    ): EffectedDraft<P, E | F, R>;
+    (handler: (value: R) => void): EffectedDraft<P, E, R>;
   };
 
   readonly catch: {

@@ -621,6 +621,49 @@ describe("effected", () => {
   });
 });
 
+describe("Effected#tap", () => {
+  it("should run a side effect and return the original value", () => {
+    const logs: unknown[][] = [];
+    expect(
+      Effected.of(42)
+        .tap((value) => {
+          logs.push(["tap", value]);
+          return value + 1;
+        })
+        .runSync(),
+    ).toBe(42);
+    expect(logs).toEqual([["tap", 42]]);
+  });
+
+  it("should run a side effect with other effects", () => {
+    const logs: unknown[][] = [];
+    expect(
+      Effected.of(42)
+        .tap(function* (value) {
+          yield* log("tap", value);
+          return (value + 1) as unknown as void;
+        })
+        .resume("log", (...args) => Array.prototype.push.apply(logs, args))
+        .runSync(),
+    ).toBe(42);
+    expect(logs).toEqual(["tap", 42]);
+
+    logs.length = 0;
+    expect(
+      Effected.of(42)
+        .tap((value) =>
+          effected(function* () {
+            yield* log("tap", value);
+            return (value + 1) as unknown as void;
+          }),
+        )
+        .resume("log", (...args) => Array.prototype.push.apply(logs, args))
+        .runSync(),
+    ).toBe(42);
+    expect(logs).toEqual(["tap", 42]);
+  });
+});
+
 describe("Effected#catchAndThrow", () => {
   const typeError = error("type");
 

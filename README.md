@@ -748,6 +748,39 @@ const safeDivide2 = (a: number, b: number): Effected<never, Option<number>> =>
 
 Now, running `safeDivide2(1, 0).runSync()` will return `none`, while `safeDivide2(1, 2).runSync()` will return `some(0.5)`.
 
+Besides `.map(handler)`, the `.tap(handler)` method offers a useful alternative when you want to execute side effects without altering the return value. Unlike `.map()`, `.tap()` ignores the return value of the handler function, ensuring the original value is preserved. This makes it ideal for operations like logging, where the action doesn’t modify the main data flow.
+
+For instance, you can use `.tap()` to simulate a `defer` effect similar to Go’s `defer` statement:
+
+```typescript
+type Defer = Effect<"defer", [fn: () => void], void>;
+const defer: EffectFactory<Defer> = effect("defer");
+
+const deferHandler = defineHandlerFor<Defer>().with((effected) => {
+  const deferredActions: Array<() => void> = [];
+
+  return effected
+    .resume("defer", (fn) => {
+      deferredActions.push(fn);
+    })
+    .tap(() => {
+      deferredActions.forEach((fn) => fn());
+    });
+});
+
+const program = effected(function* () {
+  yield* defer(() => console.log("Deferred action"));
+  console.log("Normal action");
+}).with(deferHandler);
+```
+
+When you run `program.runSync()`, you’ll see the following output:
+
+```text
+Normal action
+Deferred action
+```
+
 ### Handling multiple effects in one handler
 
 Imagine we have the following setup:

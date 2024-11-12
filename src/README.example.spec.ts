@@ -624,27 +624,65 @@ test("Handling effects with another effected program", () => {
 });
 
 test("Handling return values", () => {
-  type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
-  const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
+  {
+    type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
+    const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
 
-  const safeDivide = (a: number, b: number): Effected<Raise, number> =>
-    effected(function* () {
-      if (b === 0) return yield* raise("Division by zero");
-      return a / b;
+    const safeDivide = (a: number, b: number): Effected<Raise, number> =>
+      effected(function* () {
+        if (b === 0) return yield* raise("Division by zero");
+        return a / b;
+      });
+
+    type Option<T> = { kind: "some"; value: T } | { kind: "none" };
+
+    const some = <T>(value: T): Option<T> => ({ kind: "some", value });
+    const none: Option<never> = { kind: "none" };
+
+    const safeDivide2 = (a: number, b: number): Effected<never, Option<number>> =>
+      safeDivide(a, b)
+        .map((value) => some(value))
+        .terminate("raise", () => none);
+
+    expect(safeDivide2(1, 0).runSync()).toEqual(none);
+    expect(safeDivide2(1, 2).runSync()).toEqual(some(0.5));
+  }
+
+  {
+    type Defer = Effect<"defer", [fn: () => void], void>;
+    const defer: EffectFactory<Defer> = effect("defer");
+
+    const deferHandler = defineHandlerFor<Defer>().with((effected) => {
+      const deferredActions: Array<() => void> = [];
+
+      return effected
+        .resume("defer", (fn) => {
+          deferredActions.push(fn);
+        })
+        .tap(() => {
+          deferredActions.forEach((fn) => fn());
+        });
     });
 
-  type Option<T> = { kind: "some"; value: T } | { kind: "none" };
+    const program = effected(function* () {
+      yield* defer(() => console.log("Deferred action"));
+      console.log("Normal action");
+    }).with(deferHandler);
 
-  const some = <T>(value: T): Option<T> => ({ kind: "some", value });
-  const none: Option<never> = { kind: "none" };
-
-  const safeDivide2 = (a: number, b: number): Effected<never, Option<number>> =>
-    safeDivide(a, b)
-      .map((value) => some(value))
-      .terminate("raise", () => none);
-
-  expect(safeDivide2(1, 0).runSync()).toEqual(none);
-  expect(safeDivide2(1, 2).runSync()).toEqual(some(0.5));
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    program.runSync();
+    expect(logSpy.mock.calls).toMatchInlineSnapshot(`
+      [
+        [
+          "Normal action",
+        ],
+        [
+          "Deferred action",
+        ],
+      ]
+    `);
+    logSpy.mockRestore();
+  }
 });
 
 test("Handling multiple effects in one handler", () => {

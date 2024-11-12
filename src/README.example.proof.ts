@@ -331,28 +331,54 @@ test("Handling effects with another effected program", () => {
 });
 
 test("Handling return values", () => {
-  type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
-  const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
+  {
+    type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
+    const raise: EffectFactory<Raise> = effect("raise", { resumable: false });
 
-  const safeDivide = (a: number, b: number) =>
-    effected(function* () {
-      if (b === 0) return yield* raise("Division by zero");
-      return a / b;
+    const safeDivide = (a: number, b: number) =>
+      effected(function* () {
+        if (b === 0) return yield* raise("Division by zero");
+        return a / b;
+      });
+
+    expect(safeDivide).to(equal<(a: number, b: number) => Effected<Raise, number>>);
+
+    type Option<T> = { kind: "some"; value: T } | { kind: "none" };
+
+    const some = <T>(value: T): Option<T> => ({ kind: "some", value });
+    const none: Option<never> = { kind: "none" };
+
+    const safeDivide2 = (a: number, b: number) =>
+      safeDivide(a, b)
+        .map((value) => some(value))
+        .terminate("raise", () => none);
+
+    expect(safeDivide2).to(equal<(a: number, b: number) => Effected<never, Option<number>>>);
+  }
+
+  {
+    type Defer = Effect<"defer", [fn: () => void], void>;
+    const defer: EffectFactory<Defer> = effect("defer");
+
+    const deferHandler = defineHandlerFor<Defer>().with((effected) => {
+      const deferredActions: Array<() => void> = [];
+
+      return effected
+        .resume("defer", (fn) => {
+          deferredActions.push(fn);
+        })
+        .tap(() => {
+          deferredActions.forEach((fn) => fn());
+        });
     });
 
-  expect(safeDivide).to(equal<(a: number, b: number) => Effected<Raise, number>>);
+    const program = effected(function* () {
+      yield* defer(() => console.log("Deferred action"));
+      console.log("Normal action");
+    }).with(deferHandler);
 
-  type Option<T> = { kind: "some"; value: T } | { kind: "none" };
-
-  const some = <T>(value: T): Option<T> => ({ kind: "some", value });
-  const none: Option<never> = { kind: "none" };
-
-  const safeDivide2 = (a: number, b: number) =>
-    safeDivide(a, b)
-      .map((value) => some(value))
-      .terminate("raise", () => none);
-
-  expect(safeDivide2).to(equal<(a: number, b: number) => Effected<never, Option<number>>>);
+    expect(program).to(equal<Effected<never, void>>);
+  }
 });
 
 test("Handling multiple effects in one handler", () => {
