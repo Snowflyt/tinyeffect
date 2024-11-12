@@ -31,9 +31,13 @@ test("banner", () => {
     });
 
   const program = fetchAdminData()
-    .resume("log", (msg) => console.log(msg))
+    .resume("log", (msg) => {
+      console.log(msg);
+    })
     .provideBy("user", () => ({ id: 1, name: "Alice", role: "admin" }) satisfies User)
-    .catch("auth", (err) => console.error("Authorization error:", err));
+    .catch("auth", (err) => {
+      console.error("Authorization error:", err);
+    });
 
   expect(program).to(equal<Effected<never, void>>);
 });
@@ -162,10 +166,16 @@ test("Usage", () => {
       console.log("Parameters:", params);
       return 42;
     })
-    .resume("println", console.log)
+    .resume("println", (...args) => {
+      console.log(...args);
+    })
     .provide("currentUser", { id: 1, name: "Charlie", role: "admin" })
-    .catch("authentication", () => console.error("Authentication error"))
-    .catch("unauthorized", () => console.error("Unauthorized error"));
+    .catch("authentication", () => {
+      console.error("Authentication error");
+    })
+    .catch("unauthorized", () => {
+      console.error("Unauthorized error");
+    });
 
   expect(handled4).to(equal<Effected<never, void | User>>);
   expect(handled4.runSync()).to(equal<void | User>);

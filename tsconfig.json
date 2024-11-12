@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2015",
     "useDefineForClassFields": true,
-    "lib": ["ES2020"],
-    "module": "ESNext",
+    "lib": ["ES2015", "ES2018.AsyncGenerator"],
+    "module": "ES2015",
+    "types": [],
 
     /* Bundler mode */
     "moduleResolution": "Bundler",
@@ -25,5 +26,6 @@
     /* Type */
     "declaration": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/**/*.proof.ts", "src/**/*.spec.ts", "src/**/*.bench.ts"]
 }

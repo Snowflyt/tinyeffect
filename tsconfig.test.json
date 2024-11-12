@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "useDefineForClassFields": true,
+    "lib": ["ESNext"],
+    "module": "ESNext"
+  },
+  "include": ["src/**/*.proof.ts", "src/**/*.spec.ts", "src/**/*.bench.ts"],
+  "exclude": []
+}
