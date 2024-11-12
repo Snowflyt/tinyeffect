@@ -628,7 +628,7 @@ describe("Effected#tap", () => {
       Effected.of(42)
         .tap((value) => {
           logs.push(["tap", value]);
-          return value + 1;
+          return (value + 1) as unknown as void;
         })
         .runSync(),
     ).toBe(42);
@@ -643,7 +643,9 @@ describe("Effected#tap", () => {
           yield* log("tap", value);
           return (value + 1) as unknown as void;
         })
-        .resume("log", (...args) => Array.prototype.push.apply(logs, args))
+        .resume("log", (...args) => {
+          Array.prototype.push.apply(logs, args);
+        })
         .runSync(),
     ).toBe(42);
     expect(logs).toEqual(["tap", 42]);
@@ -657,7 +659,9 @@ describe("Effected#tap", () => {
             return (value + 1) as unknown as void;
           }),
         )
-        .resume("log", (...args) => Array.prototype.push.apply(logs, args))
+        .resume("log", (...args) => {
+          Array.prototype.push.apply(logs, args);
+        })
         .runSync(),
     ).toBe(42);
     expect(logs).toEqual(["tap", 42]);

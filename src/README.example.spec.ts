@@ -681,7 +681,6 @@ test("Handling return values", () => {
         ],
       ]
     `);
-    logSpy.mockRestore();
   }
 });
 
@@ -779,7 +778,9 @@ test("Handling multiple effects in one handler", () => {
     const logs: unknown[][] = [];
     expect(
       range2(1, 0)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(err({ error: "range", message: "Start must be less than stop" }));
     expect(logs).toEqual([]);
@@ -787,7 +788,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range2(1.5, 5)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(err({ error: "type", message: "Start and stop must be integers" }));
     expect(logs).toEqual([]);
@@ -795,7 +798,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range2(1, 5)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(ok([1, 2, 3, 4]));
     expect(logs).toEqual([["Generating range from 1 to 5"]]);
@@ -805,7 +810,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range3(1, 0)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(err({ error: "range", message: "Start must be less than stop" }));
     expect(logs).toEqual([]);
@@ -813,7 +820,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range3(1.5, 5)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(err({ error: "type", message: "Start and stop must be integers" }));
     expect(logs).toEqual([]);
@@ -821,7 +830,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range3(1, 5)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(ok([1, 2, 3, 4]));
     expect(logs).toEqual([["Generating range from 1 to 5"]]);
@@ -834,7 +845,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range4(1, 0)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(err({ error: "range", message: "Start must be less than stop" }));
     expect(logs).toEqual([]);
@@ -842,7 +855,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range4(1.5, 5)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(err({ error: "type", message: "Start and stop must be integers" }));
     expect(logs).toEqual([]);
@@ -850,7 +865,9 @@ test("Handling multiple effects in one handler", () => {
 
     expect(
       range4(1, 5)
-        .resume("println", (...args) => logs.push(args))
+        .resume("println", (...args) => {
+          logs.push(args);
+        })
         .runSync(),
     ).toEqual(ok([1, 2, 3, 4]));
     expect(logs).toEqual([["Generating range from 1 to 5"]]);

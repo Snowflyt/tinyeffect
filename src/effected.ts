@@ -185,12 +185,18 @@ type DependencyName<E extends Effect> =
  * ```
  */
 export function defineHandlerFor<E extends Effect, R>(): {
-  with: <H extends (effected: EffectedDraft<E, E, R>) => EffectedDraft<E, Effect, unknown>>(
+  with: <
+    S extends EffectedDraft<E, Effect, unknown>,
+    H extends (effected: EffectedDraft<E, E, R>) => S,
+  >(
     handler: H,
   ) => H;
 };
 export function defineHandlerFor<E extends Effect>(): {
-  with: <H extends <R>(effected: EffectedDraft<E, E, R>) => EffectedDraft<E, Effect, unknown>>(
+  with: <
+    S extends EffectedDraft<E, Effect, unknown>,
+    H extends <R>(effected: EffectedDraft<E, E, R>) => S,
+  >(
     handler: H,
   ) => H;
 };
@@ -273,7 +279,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
       (
         { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
         ...payloads: Payloads
-      ) => Effected<F, void>
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
     : E extends Effect<Name, infer Payloads, infer R> ?
       (
         {
@@ -286,7 +292,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
           terminate: (value: T) => void;
         },
         ...payloads: Payloads
-      ) => Effected<F, void>
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
   handle<Name extends string | symbol, T = R, F extends Effect = never>(
@@ -295,7 +301,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
       (
         { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
         ...payloads: Payloads
-      ) => Effected<F, void>
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
     : E extends Effect<Name, infer Payloads, infer R> ?
       (
         {
@@ -308,97 +314,9 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
           terminate: (value: T) => void;
         },
         ...payloads: Payloads
-      ) => Effected<F, void>
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
-  handle<Name extends E["name"], T = R, F extends Effect = never>(
-    effect: Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => Generator<F, void, unknown>
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => Generator<F, void, unknown>
-    : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
-  handle<Name extends string | symbol, T = R, F extends Effect = never>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => Generator<F, void, unknown>
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => Generator<F, void, unknown>
-    : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
-  handle<Name extends E["name"], T = R>(
-    effect: Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => void
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => void
-    : never,
-  ): Effected<Exclude<E, Effect<Name>>, R | T>;
-  handle<Name extends string | symbol, T = R>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => void
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => void
-    : never,
-  ): Effected<Exclude<E, Effect<Name>>, R | T>;
   handle(
     name: string | symbol | ((name: string | symbol) => boolean),
     handler: (...args: any[]) => unknown,
@@ -549,35 +467,15 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   resume<Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
     effect: Name,
     handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => Effected<F, R>
+      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R>;
   resume<Name extends string | symbol, F extends Effect = never>(
     effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
     handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => Effected<F, R>
+      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R>;
-  resume<Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
-    effect: Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => Generator<F, R, unknown>
-    : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R>;
-  resume<Name extends string | symbol, F extends Effect = never>(
-    effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => Generator<F, R, unknown>
-    : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R>;
-  resume<Name extends Exclude<E, Unresumable<Effect>>["name"]>(
-    effect: Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ? (...payloads: Payloads) => R : never,
-  ): Effected<Exclude<E, Effect<Name>>, R>;
-  resume<Name extends string | symbol>(
-    effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ? (...payloads: Payloads) => R : never,
-  ): Effected<Exclude<E, Effect<Name>>, R>;
   resume(effect: any, handler: (...payloads: unknown[]) => unknown) {
     return this.handle(effect, (({ resume }: any, ...payloads: unknown[]) => {
       const it = handler(...payloads);
@@ -601,24 +499,14 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    */
   terminate<Name extends E["name"], T, F extends Effect = never>(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => Effected<F, T>
-    : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
-  terminate<Name extends string | symbol, T, F extends Effect = never>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => Effected<F, T>
-    : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
-  terminate<Name extends E["name"], T, F extends Effect = never>(
-    effect: Name,
     handler: E extends Effect<Name, infer Payloads> ?
-      (...payloads: Payloads) => Generator<F, T, unknown>
+      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
   terminate<Name extends string | symbol, T, F extends Effect = never>(
     effect: (name: E["name"]) => name is Name,
     handler: E extends Effect<Name, infer Payloads> ?
-      (...payloads: Payloads) => Generator<F, T, unknown>
+      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
   terminate<Name extends E["name"], T>(
@@ -644,17 +532,16 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * @param handler The function to map the return value.
    * @returns
    */
-  map<S, F extends Effect = never>(handler: (value: R) => Effected<F, S>): Effected<E | F, S>;
   map<S, F extends Effect = never>(
-    handler: (value: R) => Generator<F, S, unknown>,
+    handler: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
   ): Effected<E | F, S>;
   map<S>(handler: (value: R) => S): Effected<E, S>;
-  map(handler: (value: R) => unknown): Effected<E, unknown> {
+  map(handler: (value: R) => unknown): Effected<Effect, unknown> {
     const iterator = this[Symbol.iterator]();
 
     return effected(() => {
       let originalIteratorDone = false;
-      let appendedIterator: Iterator<E, unknown, unknown>;
+      let appendedIterator: Iterator<Effect, unknown, unknown>;
       return {
         next: (...args: [] | [R]) => {
           if (originalIteratorDone) return appendedIterator.next(...args);
@@ -677,12 +564,9 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    *
    * @since 0.2.1
    */
-  tap<F extends Effect = never>(handler: (value: R) => Effected<F, void>): Effected<E | F, R>;
   tap<F extends Effect = never>(
-    handler: (value: R) => Generator<F, void, unknown>,
-  ): Effected<E | F, R>;
-  tap(handler: (value: R) => void): Effected<E, R>;
-  tap(handler: (value: R) => unknown): Effected<E, unknown> {
+    handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,
+  ): Effected<E | F, R> {
     return this.map((value) => {
       const it = handler(value);
       if (!(it instanceof Effected) && !isGenerator(it)) return value;
@@ -690,7 +574,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
         yield* it;
         return value;
       })();
-    });
+    }) as never;
   }
 
   /**
@@ -705,15 +589,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    */
   catch<Name extends ErrorName<E>, T, F extends Effect = never>(
     effect: Name,
-    handler: (message?: string) => Effected<F, T>,
-  ): Effected<Exclude<E, Effect.Error<Name>> | F, R | T>;
-  catch<Name extends ErrorName<E>, T, F extends Effect = never>(
-    effect: Name,
-    handler: (message?: string) => Generator<F, T, unknown>,
-  ): Effected<Exclude<E, Effect.Error<Name>> | F, R | T>;
-  catch<Name extends ErrorName<E>, T, F extends Effect = never>(
-    effect: Name,
-    handler: (message?: string) => Generator<F, T, unknown>,
+    handler: (message?: string) => Generator<F, T, unknown> | Effected<F, T>,
   ): Effected<Exclude<E, Effect.Error<Name>> | F, R | T>;
   catch<Name extends ErrorName<E>, T>(
     effect: Name,
@@ -729,10 +605,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * effect (without the `"error:"` prefix), and the second argument is the message of the error.
    */
   catchAll<T, F extends Effect = never>(
-    handler: (error: ErrorName<E>, message?: string) => Effected<F, T>,
-  ): Effected<Exclude<E, Effect.Error> | F, R | T>;
-  catchAll<T, F extends Effect = never>(
-    handler: (error: ErrorName<E>, message?: string) => Generator<F, T, unknown>,
+    handler: (error: ErrorName<E>, message?: string) => Generator<F, T, unknown> | Effected<F, T>,
   ): Effected<Exclude<E, Effect.Error> | F, R | T>;
   catchAll<T>(
     handler: (error: ErrorName<E>, message?: string) => T,
@@ -815,18 +688,11 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    */
   provideBy<Name extends DependencyName<E>, F extends Effect = never>(
     name: Name,
-    getter: E extends Effect.Dependency<Name, infer R> ? () => Effected<F, R> : never,
-  ): Effected<Exclude<E, Effect.Dependency<Name>> | F, R>;
-  provideBy<Name extends DependencyName<E>, F extends Effect = never>(
-    name: Name,
-    getter: E extends Effect.Dependency<Name, infer R> ? () => Generator<F, R, unknown> : never,
-  ): Effected<Exclude<E, Effect.Dependency<Name>> | F, R>;
-  provideBy<Name extends DependencyName<E>>(
-    name: Name,
-    getter: E extends Effect.Dependency<Name, infer R> ? () => R : never,
-  ): Effected<Exclude<E, Effect.Dependency<Name>>, R>;
-  provideBy(name: string, getter: () => unknown): Effected<Effect, unknown> {
-    return this.resume(`dependency:${name}`, getter as never);
+    getter: E extends Effect.Dependency<Name, infer R> ?
+      () => R | Generator<F, R, unknown> | Effected<F, R>
+    : never,
+  ): Effected<Exclude<E, Effect.Dependency<Name>> | F, R> {
+    return this.resume(`dependency:${name}`, getter as never) as never;
   }
 
   /**
@@ -848,279 +714,109 @@ interface EffectedDraft<
   out E extends Effect = Effect,
   out R = unknown,
 > extends Iterable<E, R, unknown> {
-  readonly handle: {
-    <Name extends E["name"], T = R, F extends Effect = never>(
-      effect: Name,
-      handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-        (
-          {
-            effect,
-            terminate,
-          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-          ...payloads: Payloads
-        ) => Effected<F, void>
-      : E extends Effect<Name, infer Payloads, infer R> ?
-        (
-          {
-            effect,
-            resume,
-            terminate,
-          }: {
-            effect: Extract<E, Effect<Name>>;
-            resume: (value: R) => void;
-            terminate: (value: T) => void;
-          },
-          ...payloads: Payloads
-        ) => Effected<F, void>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends string | symbol, T = R, F extends Effect = never>(
-      effect: (name: E["name"]) => name is Name,
-      handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-        (
-          {
-            effect,
-            terminate,
-          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-          ...payloads: Payloads
-        ) => Effected<F, void>
-      : E extends Effect<Name, infer Payloads, infer R> ?
-        (
-          {
-            effect,
-            resume,
-            terminate,
-          }: {
-            effect: Extract<E, Effect<Name>>;
-            resume: (value: R) => void;
-            terminate: (value: T) => void;
-          },
-          ...payloads: Payloads
-        ) => Effected<F, void>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends E["name"], T = R, F extends Effect = never>(
-      effect: Name,
-      handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-        (
-          {
-            effect,
-            terminate,
-          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-          ...payloads: Payloads
-        ) => Generator<F, void, unknown>
-      : E extends Effect<Name, infer Payloads, infer R> ?
-        (
-          {
-            effect,
-            resume,
-            terminate,
-          }: {
-            effect: Extract<E, Effect<Name>>;
-            resume: (value: R) => void;
-            terminate: (value: T) => void;
-          },
-          ...payloads: Payloads
-        ) => Generator<F, void, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends string | symbol, T = R, F extends Effect = never>(
-      effect: (name: E["name"]) => name is Name,
-      handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-        (
-          {
-            effect,
-            terminate,
-          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-          ...payloads: Payloads
-        ) => Generator<F, void, unknown>
-      : E extends Effect<Name, infer Payloads, infer R> ?
-        (
-          {
-            effect,
-            resume,
-            terminate,
-          }: {
-            effect: Extract<E, Effect<Name>>;
-            resume: (value: R) => void;
-            terminate: (value: T) => void;
-          },
-          ...payloads: Payloads
-        ) => Generator<F, void, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends E["name"], T = R>(
-      effect: Name,
-      handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-        (
-          {
-            effect,
-            terminate,
-          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-          ...payloads: Payloads
-        ) => void
-      : E extends Effect<Name, infer Payloads, infer R> ?
-        (
-          {
-            effect,
-            resume,
-            terminate,
-          }: {
-            effect: Extract<E, Effect<Name>>;
-            resume: (value: R) => void;
-            terminate: (value: T) => void;
-          },
-          ...payloads: Payloads
-        ) => void
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
-    <Name extends string | symbol, T = R>(
-      effect: (name: E["name"]) => name is Name,
-      handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-        (
-          {
-            effect,
-            terminate,
-          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-          ...payloads: Payloads
-        ) => void
-      : E extends Effect<Name, infer Payloads, infer R> ?
-        (
-          {
-            effect,
-            resume,
-            terminate,
-          }: {
-            effect: Extract<E, Effect<Name>>;
-            resume: (value: R) => void;
-            terminate: (value: T) => void;
-          },
-          ...payloads: Payloads
-        ) => void
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
-  };
-  readonly resume: {
-    <Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads, infer R> ?
-        (...payloads: Payloads) => Effected<F, R>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
-    <Name extends string | symbol, F extends Effect = never>(
-      effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-      handler: E extends Effect<Name, infer Payloads, infer R> ?
-        (...payloads: Payloads) => Effected<F, R>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
-    <Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads, infer R> ?
-        (...payloads: Payloads) => Generator<F, R, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
-    <Name extends string | symbol, F extends Effect = never>(
-      effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-      handler: E extends Effect<Name, infer Payloads, infer R> ?
-        (...payloads: Payloads) => Generator<F, R, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
-    <Name extends Exclude<E, Unresumable<Effect>>["name"]>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads, infer R> ? (...payloads: Payloads) => R
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>>, R>;
-    <Name extends string | symbol>(
-      effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-      handler: E extends Effect<Name, infer Payloads, infer R> ? (...payloads: Payloads) => R
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>>, R>;
-  };
-  readonly terminate: {
-    <Name extends E["name"], T, F extends Effect = never>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => Effected<F, T>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends string | symbol, T, F extends Effect = never>(
-      effect: (name: E["name"]) => name is Name,
-      handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => Effected<F, T>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends E["name"], T, F extends Effect = never>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads> ?
-        (...payloads: Payloads) => Generator<F, T, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends E["name"], T, F extends Effect = never>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads> ?
-        (...payloads: Payloads) => Generator<F, T, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends string | symbol, T, F extends Effect = never>(
-      effect: (name: E["name"]) => name is Name,
-      handler: E extends Effect<Name, infer Payloads> ?
-        (...payloads: Payloads) => Generator<F, T, unknown>
-      : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-    <Name extends E["name"], T>(
-      effect: Name,
-      handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
-    <Name extends string | symbol, T>(
-      effect: (name: E["name"]) => name is Name,
-      handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
-    ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
-  };
+  handle<Name extends E["name"], T = R, F extends Effect = never>(
+    effect: Name,
+    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
+      (
+        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
+        ...payloads: Payloads
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    : E extends Effect<Name, infer Payloads, infer R> ?
+      (
+        {
+          effect,
+          resume,
+          terminate,
+        }: {
+          effect: Extract<E, Effect<Name>>;
+          resume: (value: R) => void;
+          terminate: (value: T) => void;
+        },
+        ...payloads: Payloads
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
+  handle<Name extends string | symbol, T = R, F extends Effect = never>(
+    effect: (name: E["name"]) => name is Name,
+    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
+      (
+        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
+        ...payloads: Payloads
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    : E extends Effect<Name, infer Payloads, infer R> ?
+      (
+        {
+          effect,
+          resume,
+          terminate,
+        }: {
+          effect: Extract<E, Effect<Name>>;
+          resume: (value: R) => void;
+          terminate: (value: T) => void;
+        },
+        ...payloads: Payloads
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
 
-  readonly map: {
-    <S, F extends Effect = never>(
-      handler: (value: R) => Effected<F, S>,
-    ): EffectedDraft<P, E | F, S>;
-    <S, F extends Effect = never>(
-      handler: (value: R) => Generator<F, S, unknown>,
-    ): EffectedDraft<P, E | F, S>;
-    <S>(handler: (value: R) => S): EffectedDraft<P, E, S>;
-  };
+  resume<Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
+    effect: Name,
+    handler: E extends Effect<Name, infer Payloads, infer R> ?
+      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
+  resume<Name extends string | symbol, F extends Effect = never>(
+    effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
+    handler: E extends Effect<Name, infer Payloads, infer R> ?
+      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
 
-  readonly tap: {
-    <F extends Effect = never>(
-      handler: (value: R) => Effected<F, void>,
-    ): EffectedDraft<P, E | F, R>;
-    <F extends Effect = never>(
-      handler: (value: R) => Generator<F, void, unknown>,
-    ): EffectedDraft<P, E | F, R>;
-    (handler: (value: R) => void): EffectedDraft<P, E, R>;
-  };
+  terminate<Name extends E["name"], T, F extends Effect = never>(
+    effect: Name,
+    handler: E extends Effect<Name, infer Payloads> ?
+      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
+  terminate<Name extends string | symbol, T, F extends Effect = never>(
+    effect: (name: E["name"]) => name is Name,
+    handler: E extends Effect<Name, infer Payloads> ?
+      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
+  terminate<Name extends E["name"], T>(
+    effect: Name,
+    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
+  terminate<Name extends string | symbol, T>(
+    effect: (name: E["name"]) => name is Name,
+    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
+  ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
 
-  readonly catch: {
-    <Name extends ErrorName<E>, T, F extends Effect = never>(
-      effect: Name,
-      handler: (message?: string) => Effected<F, T>,
-    ): EffectedDraft<P, Exclude<E, Effect.Error<Name>> | F, R | T>;
-    <Name extends ErrorName<E>, T, F extends Effect = never>(
-      effect: Name,
-      handler: (message?: string) => Generator<F, T, unknown>,
-    ): EffectedDraft<P, Exclude<E, Effect.Error<Name>> | F, R | T>;
-    <Name extends ErrorName<E>, T>(
-      effect: Name,
-      handler: (message?: string) => T,
-    ): EffectedDraft<P, Exclude<E, Effect.Error<Name>>, R | T>;
-  };
+  map<S, F extends Effect = never>(
+    handler: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
+  ): EffectedDraft<P, E | F, S>;
+  map<S>(handler: (value: R) => S): EffectedDraft<P, E, S>;
 
-  readonly catchAll: {
-    <T, F extends Effect = never>(
-      handler: (effect: ErrorName<E>, message?: string) => Effected<F, T>,
-    ): Effected<Exclude<E, Effect.Error> | F, R | T>;
-    <T, F extends Effect = never>(
-      handler: (effect: ErrorName<E>, message?: string) => Generator<F, T, unknown>,
-    ): Effected<Exclude<E, Effect.Error> | F, R | T>;
-    <T>(
-      handler: (effect: ErrorName<E>, message?: string) => T,
-    ): Effected<Exclude<E, Effect.Error>, R | T>;
-  };
+  tap<F extends Effect = never>(
+    handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,
+  ): EffectedDraft<P, E | F, R>;
+
+  catch<Name extends ErrorName<E>, T, F extends Effect = never>(
+    effect: Name,
+    handler: (message?: string) => Generator<F, T, unknown> | Effected<F, T>,
+  ): EffectedDraft<P, Exclude<E, Effect.Error<Name>> | F, R | T>;
+  catch<Name extends ErrorName<E>, T>(
+    effect: Name,
+    handler: (message?: string) => T,
+  ): EffectedDraft<P, Exclude<E, Effect.Error<Name>>, R | T>;
+
+  catchAll<T, F extends Effect = never>(
+    handler: (effect: ErrorName<E>, message?: string) => Generator<F, T, unknown> | Effected<F, T>,
+  ): Effected<Exclude<E, Effect.Error> | F, R | T>;
+  catchAll<T>(
+    handler: (effect: ErrorName<E>, message?: string) => T,
+  ): Effected<Exclude<E, Effect.Error>, R | T>;
 
   readonly catchAndThrow: <Name extends ErrorName<E>>(
     name: Name,
@@ -1135,29 +831,19 @@ interface EffectedDraft<
     name: Name,
     value: E extends Effect.Dependency<Name, infer R> ? R : never,
   ) => EffectedDraft<P, Exclude<E, Effect.Dependency<Name>>, R>;
-  readonly provideBy: {
-    <Name extends DependencyName<E>, F extends Effect = never>(
-      name: Name,
-      getter: E extends Effect.Dependency<Name, infer R> ? () => Effected<F, R> : never,
-    ): EffectedDraft<P, Exclude<E, Effect.Dependency<Name>> | F, R>;
-    <Name extends DependencyName<E>, F extends Effect = never>(
-      name: Name,
-      getter: E extends Effect.Dependency<Name, infer R> ? () => Generator<F, R, unknown> : never,
-    ): EffectedDraft<P, Exclude<E, Effect.Dependency<Name>> | F, R>;
-    <Name extends DependencyName<E>>(
-      name: Name,
-      getter: E extends Effect.Dependency<Name, infer R> ? () => R : never,
-    ): EffectedDraft<P, Exclude<E, Effect.Dependency<Name>>, R>;
-  };
+  provideBy<Name extends DependencyName<E>, F extends Effect = never>(
+    name: Name,
+    getter: E extends Effect.Dependency<Name, infer R> ?
+      () => R | Generator<F, R, unknown> | Effected<F, R>
+    : never,
+  ): EffectedDraft<P, Exclude<E, Effect.Dependency<Name>> | F, R>;
 
-  readonly with: {
-    <F extends Effect, G extends Effect, S>(
-      handler: (effected: EffectedDraft<never, never, R>) => EffectedDraft<F, G, S>,
-    ): EffectedDraft<P, Exclude<E, F> | G, S>;
-    <F extends Effect, S>(
-      handler: (effected: Effected<E, R>) => Effected<F, S>,
-    ): EffectedDraft<P, F, S>;
-  };
+  with<F extends Effect, G extends Effect, S>(
+    handler: (effected: EffectedDraft<never, never, R>) => EffectedDraft<F, G, S>,
+  ): EffectedDraft<P, Exclude<E, F> | G, S>;
+  with<F extends Effect, S>(
+    handler: (effected: Effected<E, R>) => Effected<F, S>,
+  ): EffectedDraft<P, F, S>;
 }
 
 /**

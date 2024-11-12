@@ -128,7 +128,9 @@ test("app", () => {
     }
   })
     .provideBy("currentUser", () => currentUser)
-    .resume("setCurrentUser", (user) => (currentUser = user))
+    .resume("setCurrentUser", (user) => {
+      currentUser = user;
+    })
     .catch("authentication", console.error)
     .catch("unauthorized", console.error)
     .catch("userNotFound", console.error)
