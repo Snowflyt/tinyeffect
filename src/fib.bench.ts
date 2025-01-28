@@ -1,7 +1,7 @@
 /**
  * Benchmark for overhead of computationally expensive functions.
  *
- * Currently the effected version is around 100x (`fibPipe`) to 200x (`fibGen`) slower than the
+ * Currently the effected version is around 100x (`fibPipeT`) to 200x (`fibGenT`) slower than the
  * non-effected version.
  *
  * Such overhead should be acceptable for most use-cases, as real-world applications are unlikely to
@@ -23,42 +23,54 @@ const fib = (n: number): number => {
   return fib(n - 1) + fib(n - 2);
 };
 
-const fibGen = (n: number): Effected<never, number> =>
+/* tinyeffect */
+const fibGenT = (n: number): Effected<never, number> =>
   effected(function* () {
     if (n <= 1) return n;
-    return (yield* fibGen(n - 1)) + (yield* fibGen(n - 2));
+    return (yield* fibGenT(n - 1)) + (yield* fibGenT(n - 2));
   });
 
-const fibPipe = (n: number): Effected<never, number> => {
+const fibPipeT = (n: number): Effected<never, number> => {
   if (n <= 1) return Effected.of(n);
-  return fibPipe(n - 1).map((a) => fibPipe(n - 2).map((b) => a + b));
+  return fibPipeT(n - 1).map((a) => fibPipeT(n - 2).map((b) => a + b));
 };
 
-const fibEGen = (n: number): Effect.Effect<number, never, never> =>
+/* Effect */
+const fibGenE = (n: number): Effect.Effect<number, never, never> =>
   Effect.gen(function* () {
     if (n <= 1) return n;
-    return (yield* fibEGen(n - 1)) + (yield* fibEGen(n - 2));
+    return (yield* fibGenE(n - 1)) + (yield* fibGenE(n - 2));
   });
 
-const fibEPipe = (n: number): Effect.Effect<number, never, never> => {
+const fibPipeE1 = (n: number): Effect.Effect<number, never, never> => {
   if (n <= 1) return Effect.succeed(n);
-  return fibEPipe(n - 1).pipe(
-    Effect.flatMap((a) => fibEPipe(n - 2).pipe(Effect.map((b) => a + b))),
+  return fibPipeE1(n - 1).pipe(
+    Effect.flatMap((a) => fibPipeE1(n - 2).pipe(Effect.map((b) => a + b))),
   );
 };
 
+const fibPipeE2 = (n: number): Effect.Effect<number, never, never> => {
+  if (n <= 1) return Effect.succeed(n);
+  return fibPipeE2(n - 1).pipe(
+    Effect.andThen((a) => fibPipeE2(n - 2).pipe(Effect.andThen((b) => a + b))),
+  );
+};
+
+/* Bench */
 describe("fib(20)", () => {
-  bench("fib(20)", () => void fib(20));
-  bench("fibGen(20)", () => void fibGen(20).runSync());
-  bench("fibPipe(20)", () => void fibPipe(20).runSync());
-  bench("fibEGen(20)", () => void Effect.runSync(fibEGen(20)));
-  bench("fibEPipe(20)", () => void Effect.runSync(fibEPipe(20)));
+  bench("[baseline] fib(20)", () => void fib(20));
+  bench("[tinyeffect] fibGen(20)", () => void fibGenT(20).runSync());
+  bench("[tinyeffect] fibPipe(20)", () => void fibPipeT(20).runSync());
+  bench("[Effect] fibGen(20)", () => void Effect.runSync(fibGenE(20)));
+  bench("[Effect] fibPipe(20) with map/flatMap", () => void Effect.runSync(fibPipeE1(20)));
+  bench("[Effect] fibPipe(20) with andThen", () => void Effect.runSync(fibPipeE2(20)));
 });
 
 describe("fib(30)", () => {
-  bench("fib(30)", () => void fib(30));
-  bench("fibGen(30)", () => void fibGen(30).runSync());
-  bench("fibPipe(30)", () => void fibPipe(30).runSync());
-  bench("fibEGen(30)", () => void Effect.runSync(fibEGen(30)));
-  bench("fibEPipe(30)", () => void Effect.runSync(fibEPipe(30)));
+  bench("[baseline] fib(30)", () => void fib(30));
+  bench("[tinyeffect] fibGen(30)", () => void fibGenT(30).runSync());
+  bench("[tinyeffect] fibPipe(30)", () => void fibPipeT(30).runSync());
+  bench("[Effect] fibGen(30)", () => void Effect.runSync(fibGenE(30)));
+  bench("[Effect] fibPipe(30) with map/flatMap", () => void Effect.runSync(fibPipeE1(30)));
+  bench("[Effect] fibPipe(30) with andThen", () => void Effect.runSync(fibPipeE2(30)));
 });
