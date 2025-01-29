@@ -48,7 +48,7 @@ export namespace Effect {
   /**
    * A special variant of {@link Effect} that represents a dependency.
    */
-  export type Dependency<out Name extends string = string, out T = unknown> = Effect<
+  export type Dependency<Name extends string = string, T = unknown> = Effect<
     `dependency:${Name}`,
     [],
     T
