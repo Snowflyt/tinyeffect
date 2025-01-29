@@ -44,15 +44,16 @@ test("banner", async () => {
     .provideBy("user", () => ({ id: 1, name: "Alice", role: "admin" }) satisfies User)
     .catch("auth", (err) => console.error("Authorization error:", err));
 
-  const spyLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   await program.runAsync();
-  expect(spyLog.mock.calls).toMatchInlineSnapshot(`
+  expect(logSpy.mock.calls).toMatchInlineSnapshot(`
     [
       [
         "Fetched data: {"userId":1,"id":1,"title":"delectus aut autem","completed":false}",
       ],
     ]
   `);
+  logSpy.mockRestore();
 });
 
 test("Usage", async () => {
@@ -620,6 +621,7 @@ test("Handling effects with another effected program", () => {
         ],
       ]
     `);
+    logSpy.mockRestore();
   }
 });
 
@@ -681,6 +683,7 @@ test("Handling return values", () => {
         ],
       ]
     `);
+    logSpy.mockRestore();
   }
 });
 
