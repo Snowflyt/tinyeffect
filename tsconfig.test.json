@@ -6,6 +6,6 @@
     "lib": ["ESNext"],
     "module": "ESNext"
   },
-  "include": ["src/**/*.proof.ts", "src/**/*.spec.ts", "src/**/*.bench.ts"],
+  "include": ["test", "src/**/*.proof.ts", "src/**/*.spec.ts", "src/**/*.bench.ts"],
   "exclude": []
 }
