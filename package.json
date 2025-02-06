@@ -1,6 +1,6 @@
 {
   "name": "tinyeffect",
-  "version": "0.3.0~dev",
+  "version": "0.3.0",
   "private": true,
   "description": "A tiny TypeScript library for handling side effects in a unified way using algebraic effects, offering a type-safe approach for async operations, error handling, dependency injection, and more.",
   "keywords": [
@@ -37,11 +37,11 @@
     "lint:fix": "eslint --fix **/*.{js,ts} *.{cjs,mjs,cts,mts} --no-error-on-unmatched-pattern --report-unused-disable-directives-severity error --max-warnings 0",
     "prepare": "husky",
     "test": "vitest run",
-    "test-types": "typroof",
     "test:cov": "vitest run --coverage --coverage.include \"src/**/!(*.proof).{js,ts}\"",
     "test:ui": "vitest --ui --coverage.enabled=true --coverage.include \"src/**/!(*.proof).{js,ts}\"",
     "test:watch": "vitest",
-    "test:watch-cov": "vitest --coverage --coverage.include \"src/**/!(*.proof).{js,ts}\""
+    "test:watch-cov": "vitest --coverage --coverage.include \"src/**/!(*.proof).{js,ts}\"",
+    "test-types": "typroof"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.7.1",
