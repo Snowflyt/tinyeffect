@@ -1249,6 +1249,19 @@ const stringify = (x: unknown, space: number = 0): string => {
 // `console` is not standard in JavaScript. Though rare, it is possible that `console` is not
 // available in some environments. We use a proxy to handle this case and ignore errors if `console`
 // is not available.
+const getConsole = (() => {
+  let cachedConsole: any = undefined;
+  return () => {
+    if (cachedConsole !== undefined) return cachedConsole;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      cachedConsole = new Function("return console")();
+    } catch {
+      cachedConsole = null;
+    }
+    return cachedConsole;
+  };
+})();
 const logger: {
   debug(...data: unknown[]): void;
   error(...data: unknown[]): void;
@@ -1259,8 +1272,7 @@ const logger: {
     (_, prop) =>
     (...args: unknown[]) => {
       try {
-        // @ts-expect-error - Cannot find name 'console'
-        console[prop](...args);
+        getConsole()[prop](...args);
       } catch {
         // Ignore
       }
