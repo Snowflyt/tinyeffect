@@ -213,8 +213,7 @@ export function defineHandlerFor() {
  * An effected program.
  */
 export class Effected<out E extends Effect, out R> implements Iterable<E, R, unknown> {
-  // @ts-expect-error - TS mistakenly think `[Symbol.iterator]` is not definitely assigned
-  readonly [Symbol.iterator]: () => Iterator<E, R, unknown>;
+  readonly [Symbol.iterator]!: () => Iterator<E, R, unknown>;
 
   readonly runSync: [E] extends [never] ? () => R : UnhandledEffect<E>;
   readonly runAsync: [E] extends [never] ? () => Promise<R> : UnhandledEffect<E>;
