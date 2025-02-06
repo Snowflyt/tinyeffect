@@ -327,20 +327,20 @@ describe("effected", () => {
 
     expect(
       raise42(42)
-        .map(some)
+        .andThen(some)
         .catch("myError", () => none)
         .runSync(),
     ).toEqual(none);
     expect(
       raise42(21)
-        .map(some)
+        .andThen(some)
         .catch("myError", () => none)
         .runSync(),
     ).toEqual(some(21));
 
     expect(
       raise42(42)
-        .map(function* () {
+        .andThen(function* () {
           return yield* random();
         })
         .catchAll((name, msg) => ({ name, msg }))
@@ -349,7 +349,7 @@ describe("effected", () => {
     ).toEqual({ name: "myError", msg: "42 is not allowed" });
     expect(
       raise42(21)
-        .map(function* () {
+        .andThen(function* () {
           return yield* random();
         })
         .catch("myError", () => none)
@@ -359,7 +359,7 @@ describe("effected", () => {
 
     expect(
       await raise42(42)
-        .map(function* (n) {
+        .andThen(function* (n) {
           return yield* effectify(new Promise((resolve) => setTimeout(() => resolve(some(n)), 0)));
         })
         .catchAll(function* (name, msg) {
@@ -371,7 +371,7 @@ describe("effected", () => {
     ).toEqual({ name: "myError", msg: "42 is not allowed" });
     expect(
       await raise42(21)
-        .map(function* (n) {
+        .andThen(function* (n) {
           return yield* effectify(new Promise((resolve) => setTimeout(() => resolve(some(n)), 0)));
         })
         .catch("myError", () => none)
@@ -388,7 +388,7 @@ describe("effected", () => {
     const none: Option<never> = { type: "None" };
 
     const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-      effected.map(some).terminate("raise", () => none),
+      effected.andThen(some).terminate("raise", () => none),
     );
 
     const raise42 = (n: number) =>

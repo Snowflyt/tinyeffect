@@ -643,7 +643,7 @@ test("Handling return values", () => {
 
     const safeDivide2 = (a: number, b: number): Effected<never, Option<number>> =>
       safeDivide(a, b)
-        .map((value) => some(value))
+        .andThen((value) => some(value))
         .terminate("raise", () => none);
 
     expect(safeDivide2(1, 0).runSync()).toEqual(none);
@@ -753,7 +753,7 @@ test("Handling multiple effects in one handler", () => {
       };
 
       return effected
-        .map((value) => ok(value))
+        .andThen((value) => ok(value))
         .handle(isErrorEffect, ({ effect, terminate }: any, message: any) => {
           terminate(err({ error: effect.name.slice("error:".length), message }));
         });
@@ -843,7 +843,7 @@ test("Handling multiple effects in one handler", () => {
 
     const range4 = (start: number, stop: number) =>
       range(start, stop)
-        .map((value) => ok(value))
+        .andThen((value) => ok(value))
         .catchAll((error, message) => err({ error, message }));
 
     expect(
@@ -1157,7 +1157,7 @@ test("Abstracting handlers", () => {
     const none: Option<never> = { kind: "none" };
 
     const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-      effected.map((value) => some(value)).terminate("raise", () => none),
+      effected.andThen((value) => some(value)).terminate("raise", () => none),
     );
 
     const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
@@ -1176,12 +1176,12 @@ test("Effects without generators", () => {
 
   const fib2 = (n: number): Effected<never, number> => {
     if (n <= 1) return Effected.of(n);
-    return fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b));
+    return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
   };
 
   const fib3 = (n: number): Effected<never, number> => {
     if (n <= 1) return Effected.from(() => n);
-    return fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b));
+    return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
   };
 
   expect(fib1(10).runSync()).toBe(55);

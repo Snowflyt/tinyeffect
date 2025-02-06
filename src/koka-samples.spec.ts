@@ -65,7 +65,7 @@ const just = <T>(value: T): Maybe<T> => ({ _tag: "Just", value });
 const nothing: Maybe<never> = { _tag: "Nothing" };
 
 const raiseMaybe = defineHandlerFor<Raise>().with((effected) =>
-  effected.map((r) => just(r)).terminate("raise", () => nothing),
+  effected.andThen((r) => just(r)).terminate("raise", () => nothing),
 );
 
 test("3.2.3. Polymorphic effects", () => {
@@ -231,7 +231,7 @@ const pState = <T>(init: T) =>
   defineHandlerFor<State<T>>().with((effected) => {
     let st = init;
     return effected
-      .map((x) => [x, st] as const)
+      .andThen((x) => [x, st] as const)
       .resume("state.get", () => st)
       .resume("state.set", (x) => {
         st = x;

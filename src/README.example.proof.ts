@@ -360,7 +360,7 @@ test("Handling return values", () => {
 
     const safeDivide2 = (a: number, b: number) =>
       safeDivide(a, b)
-        .map((value) => some(value))
+        .andThen((value) => some(value))
         .terminate("raise", () => none);
 
     expect(safeDivide2).to(equal<(a: number, b: number) => Effected<never, Option<number>>>);
@@ -470,7 +470,7 @@ test("Handling multiple effects in one handler", () => {
       };
 
       return effected
-        .map((value) => ok(value))
+        .andThen((value) => ok(value))
         .handle(isErrorEffect, ({ effect, terminate }: any, message: any) => {
           terminate(err({ error: effect.name.slice("error:".length), message }));
         });
@@ -493,7 +493,7 @@ test("Handling multiple effects in one handler", () => {
 
     const range4 = (start: number, stop: number) =>
       range(start, stop)
-        .map((value) => ok(value))
+        .andThen((value) => ok(value))
         .catchAll((error, ...args) =>
           err({ error, ...(args.length === 0 ? {} : { message: args[0] }) }),
         );
@@ -641,7 +641,7 @@ test("Abstracting handlers", () => {
     const none: Option<never> = { kind: "none" };
 
     const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-      effected.map((value) => some(value)).terminate("raise", () => none),
+      effected.andThen((value) => some(value)).terminate("raise", () => none),
     );
 
     const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);

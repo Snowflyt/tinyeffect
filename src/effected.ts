@@ -180,7 +180,7 @@ type DependencyName<E extends Effect> =
  * const none: Option<never> = { kind: "none" };
  *
  * const raiseOption = defineHandlerFor<Raise>().with((effected) =>
- *   effected.map((value) => some(value)).terminate("raise", () => none),
+ *   effected.andThen((value) => some(value)).terminate("raise", () => none),
  * );
  *
  * const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
@@ -547,15 +547,16 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
-   * Map the return value of the effected program.
-   * @param handler The function to map the return value.
+   * Chains another function or effected program after the current one, where the chained function
+   * or effected program will receive the return value of the current one.
+   * @param handler The function or effected program to chain after the current one.
    * @returns
    */
-  map<S, F extends Effect = never>(
+  andThen<S, F extends Effect = never>(
     handler: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
   ): Effected<E | F, S>;
-  map<S>(handler: (value: R) => S): Effected<E, S>;
-  map(handler: (value: R) => unknown): Effected<Effect, unknown> {
+  andThen<S>(handler: (value: R) => S): Effected<E, S>;
+  andThen(handler: (value: R) => unknown): Effected<Effect, unknown> {
     const iterator = this[Symbol.iterator]();
 
     return effected(() => {
@@ -587,7 +588,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   tap<F extends Effect = never>(
     handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,
   ): Effected<E | F, R> {
-    return this.map((value) => {
+    return this.andThen((value) => {
       const it = handler(value);
       if (!(it instanceof Effected) && !isGenerator(it)) return value;
       const iterator = it[Symbol.iterator]();
@@ -824,10 +825,10 @@ interface EffectedDraft<
     handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
   ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
 
-  map<S, F extends Effect = never>(
+  andThen<S, F extends Effect = never>(
     handler: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
   ): EffectedDraft<P, E | F, S>;
-  map<S>(handler: (value: R) => S): EffectedDraft<P, E, S>;
+  andThen<S>(handler: (value: R) => S): EffectedDraft<P, E, S>;
 
   tap<F extends Effect = never>(
     handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,

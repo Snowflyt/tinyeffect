@@ -713,9 +713,9 @@ When you run `program.runSync()`, the output will be:
 "world"
 ```
 
-### Handling return values
+### Chaining effected programs with `.andThen()` and `.tap()`
 
-Sometimes, you may want to transform a program’s return value. Let’s revisit the `safeDivide` example:
+Sometimes, you may want to transform a program’s return value, or chain another effected program after the current one. Let’s revisit the `safeDivide` example:
 
 ```typescript
 type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
@@ -737,18 +737,20 @@ const some = <T>(value: T): Option<T> => ({ kind: "some", value });
 const none: Option<never> = { kind: "none" };
 ```
 
-We want to transform the return value of `safeDivide` into an `Option` type: if `safeDivide` returns a value normally, we return `some(value)`, otherwise, we return `none` (if the raise effect is triggered). This can be achieved with the map method:
+We want to transform the return value of `safeDivide` into an `Option` type: if `safeDivide` returns a value normally, we return `some(value)`, otherwise, we return `none` (if the raise effect is triggered). This can be achieved with the `.andThen()` method:
 
 ```typescript
 const safeDivide2 = (a: number, b: number): Effected<never, Option<number>> =>
   safeDivide(a, b)
-    .map((value) => some(value))
+    .andThen((value) => some(value))
     .terminate("raise", () => none);
 ```
 
 Now, running `safeDivide2(1, 0).runSync()` will return `none`, while `safeDivide2(1, 2).runSync()` will return `some(0.5)`.
 
-Besides `.map(handler)`, the `.tap(handler)` method offers a useful alternative when you want to execute side effects without altering the return value. Unlike `.map()`, `.tap()` ignores the return value of the handler function, ensuring the original value is preserved. This makes it ideal for operations like logging, where the action doesn’t modify the main data flow.
+Similar to most other methods in tinyeffect, `.andThen()` can also be used with a generator function to chain another effected program, which can be incredibly useful in many scenarios. We’ll see many more examples of this in the following sections.
+
+Besides `.andThen(handler)`, the `.tap(handler)` method offers a useful alternative when you want to execute side effects without altering the return value. Unlike `.andThen()`, `.tap()` ignores the return value of the handler function, ensuring the original value is preserved. This makes it ideal for operations like logging, where the action doesn’t modify the main data flow.
 
 For instance, you can use `.tap()` to simulate a `defer` effect similar to Go’s `defer` statement:
 
@@ -883,7 +885,7 @@ const handleErrorAsResult = <R, E extends Effect, ErrorName extends string>(
   };
 
   return effected
-    .map((value) => ok(value))
+    .andThen((value) => ok(value))
     .handle(isErrorEffect, ({ effect, terminate }, message) => {
       terminate(err({ error: effect.name.slice("error:".length), message }));
     });
@@ -912,7 +914,7 @@ The `handleErrorAsResult` helper function shown above is mainly for illustration
 ```typescript
 const range3 = (start: number, stop: number) =>
   range(start, stop)
-    .map((value) => ok(value))
+    .andThen((value) => ok(value))
     .catchAll((error, message) => err({ error, message }));
 ```
 
@@ -1111,11 +1113,11 @@ const some = <T>(value: T): Option<T> => ({ kind: "some", value });
 const none: Option<never> = { kind: "none" };
 ```
 
-In previous examples, we used `.map()` and `.terminate()` to transform the return value of `safeDivide` to an `Option` type. Now, we can abstract this logic into a reusable handler:
+In previous examples, we used `.andThen()` and `.terminate()` to transform the return value of `safeDivide` to an `Option` type. Now, we can abstract this logic into a reusable handler:
 
 ```typescript
 const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-  effected.map((value) => some(value)).terminate("raise", () => none),
+  effected.andThen((value) => some(value)).terminate("raise", () => none),
 );
 
 const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
@@ -1154,7 +1156,7 @@ const fib2 = (n: number): Effected<never, number> => {
   if (n <= 1) return Effected.of(n);
   // Or use `Effected.from` with a getter:
   // if (n <= 1) return Effected.from(() => n);
-  return fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b));
+  return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
 };
 ```
 
@@ -1162,6 +1164,6 @@ const fib2 = (n: number): Effected<never, number> => {
 >
 > The above example is purely for illustrative purposes and _should not_ be used in practice. While it demonstrates how effects can be handled, it mimics the behavior of a simple fib function with unnecessary complexity and overhead, which could greatly degrade performance.
 
-Understanding the definition of `fib2` may take some time, but it serves as an effective demonstration of working with effects without generators. The expression `fib2(n - 1).map((a) => fib2(n - 2).map((b) => a + b))` can be interpreted as follows: “After resolving `fib2(n - 1)`, assign the result to `a`, then resolve `fib2(n - 2)` and assign the result to `b`. Finally, return `a + b`.”
+Understanding the definition of `fib2` may take some time, but it serves as an effective demonstration of working with effects without generators. The expression `fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b))` can be interpreted as follows: “After resolving `fib2(n - 1)`, assign the result to `a`, then resolve `fib2(n - 2)` and assign the result to `b`. Finally, return `a + b`.”
 
-It’s important to note that the first `.map()` call behaves like a `flatMap` operation, as it takes a function that returns another `Effected` instance and “flattens” the result. However, in tinyeffect, the distinction between `map` and `flatMap` is not explicit — `.map()` will automatically flatten the result if it’s an `Effected` instance. This allows for seamless chaining of `.map()` calls as needed.
+It’s important to note that the first `.andThen()` call behaves like a `flatMap` operation, as it takes a function that returns another `Effected` instance and “flattens” the result. However, in tinyeffect, the distinction between `map` and `flatMap` is not explicit — `.andThen()` will automatically flatten the result if it’s an `Effected` instance, just like `Promise.prototype.then()` in JavaScript. This allows for seamless chaining of `.andThen()` calls as needed.

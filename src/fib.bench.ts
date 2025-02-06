@@ -32,7 +32,7 @@ const fibGenT = (n: number): Effected<never, number> =>
 
 const fibPipeT = (n: number): Effected<never, number> => {
   if (n <= 1) return Effected.of(n);
-  return fibPipeT(n - 1).map((a) => fibPipeT(n - 2).map((b) => a + b));
+  return fibPipeT(n - 1).andThen((a) => fibPipeT(n - 2).andThen((b) => a + b));
 };
 
 /* Effect */
