@@ -213,12 +213,12 @@ export function defineHandlerFor() {
  * An effected program.
  */
 export class Effected<out E extends Effect, out R> implements Iterable<E, R, unknown> {
-  readonly [Symbol.iterator]!: () => Iterator<E, R, unknown>;
+  declare public readonly [Symbol.iterator]: () => Iterator<E, R, unknown>;
 
-  readonly runSync: [E] extends [never] ? () => R : UnhandledEffect<E>;
-  readonly runAsync: [E] extends [never] ? () => Promise<R> : UnhandledEffect<E>;
-  readonly runSyncUnsafe: () => R;
-  readonly runAsyncUnsafe: () => Promise<R>;
+  declare public readonly runSync: [E] extends [never] ? () => R : UnhandledEffect<E>;
+  declare public readonly runAsync: [E] extends [never] ? () => Promise<R> : UnhandledEffect<E>;
+  declare public readonly runSyncUnsafe: () => R;
+  declare public readonly runAsyncUnsafe: () => Promise<R>;
 
   private constructor(fn: () => Iterator<E, R, unknown>, magicWords?: string) {
     if (magicWords !== "Yes, I’m sure I want to call the constructor of Effected directly.")
