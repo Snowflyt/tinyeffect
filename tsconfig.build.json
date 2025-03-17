@@ -10,6 +10,7 @@
     /* Bundler mode */
     "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "outDir": "dist",
