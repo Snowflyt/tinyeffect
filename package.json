@@ -21,7 +21,7 @@
     "url": "https://github.com/Snowflyt/tinyeffect"
   },
   "license": "MIT",
-  "author": "Snowflyt <gaoge011022@163.com>",
+  "author": "Ge Gao (Snowflyt) <gaoge011022@gmail.com>",
   "type": "module",
   "main": "./index.js",
   "module": "./index.js",
