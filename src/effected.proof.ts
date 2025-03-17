@@ -1,11 +1,9 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
-
 import { beNever, describe, equal, expect, it, error as triggerError } from "typroof";
-
-import { dependency, effect, effected, error } from ".";
 
 import type { Effected } from "./effected";
 import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from "./types";
+
+import { dependency, effect, effected, error } from ".";
 
 const add42 = effect("add42")<[n: number], number>;
 const now = effect("now")<[], Date>;

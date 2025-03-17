@@ -5,9 +5,8 @@
 
 import { expect, test } from "vitest";
 
-import { Effected, defineHandlerFor, dependency, effect, effected, effectify } from ".";
-
 import type { Effect, EffectFactory, InferEffect } from ".";
+import { Effected, defineHandlerFor, dependency, effect, effected, effectify } from ".";
 
 type Println = Effect<"println", unknown[], void>;
 const println: EffectFactory<Println> = effect("println");
@@ -21,6 +20,7 @@ test("2.3. Effect Handlers", () => {
   type Nil = { _tag: "Nil" };
   const cons = <T>(head: T, tail: List<T>): List<T> => [head, tail];
   const nil: Nil = { _tag: "Nil" };
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const isNil = (xs: List<unknown>): xs is Nil => "_tag" in xs && xs._tag === "Nil";
   const list = <T>(...xs: T[]): List<T> => xs.reduceRight<List<T>>((acc, x) => cons(x, acc), nil);
 
@@ -242,7 +242,7 @@ test("3.4.5. Return Operations", () => {
   expect(safeDivide(1, 0).with(raiseMaybe).runSync()).toEqual(nothing);
   expect(safeDivide(42, 2).with(raiseMaybe).runSync()).toEqual(just(21));
 
-  const sumDown = (sum: number = 0): Effected<State<number>, number> =>
+  const sumDown = (sum = 0): Effected<State<number>, number> =>
     effected(function* () {
       const i = yield* state.get<number>();
       if (i <= 0) return sum;

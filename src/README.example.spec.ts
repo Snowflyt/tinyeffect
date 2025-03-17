@@ -1,8 +1,8 @@
 /* eslint-disable sonarjs/no-identical-functions */
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 
 import { expect, test, vi } from "vitest";
 
+import type { Effect, EffectFactory, Unresumable } from ".";
 import {
   Effected,
   UnhandledEffectError,
@@ -13,8 +13,6 @@ import {
   effectify,
   error,
 } from ".";
-
-import type { Effect, EffectFactory, Unresumable } from ".";
 
 test("banner", async () => {
   type User = { id: number; name: string; role: "admin" | "user" };
@@ -655,7 +653,7 @@ test("Handling return values", () => {
     const defer: EffectFactory<Defer> = effect("defer");
 
     const deferHandler = defineHandlerFor<Defer>().with((effected) => {
-      const deferredActions: Array<() => void> = [];
+      const deferredActions: (() => void)[] = [];
 
       return effected
         .resume("defer", (fn) => {
@@ -986,7 +984,6 @@ test("Handling error effects", () => {
         expect(errorProto).toBeInstanceOf(Error);
         expect(errorProto.name).toBe("TypeError");
         expect(errorProto.constructor.name).toBe("TypeError");
-        expect(e);
       }
     }
     expect(thrown).toBe(true);
@@ -1011,7 +1008,6 @@ test("Handling error effects", () => {
         expect(errorProto).toBeInstanceOf(Error);
         expect(errorProto.name).toBe("TypeError");
         expect(errorProto.constructor.name).toBe("TypeError");
-        expect(e);
       }
     }
     expect(thrown).toBe(true);
@@ -1036,7 +1032,6 @@ test("Handling error effects", () => {
         expect(errorProto).toBeInstanceOf(Error);
         expect(errorProto.name).toBe("RangeError");
         expect(errorProto.constructor.name).toBe("RangeError");
-        expect(e);
       }
     }
     expect(thrown).toBe(true);
@@ -1057,9 +1052,9 @@ test("Handling error effects", () => {
         expect(errorProto).toBeInstanceOf(Error);
         expect(errorProto.name).toBe("RangeError");
         expect(errorProto.constructor.name).toBe("RangeError");
-        expect(e);
       }
     }
+    expect(thrown).toBe(true);
 
     const range6 = (start: number, stop: number) =>
       range(start, stop).catchAllAndThrow("An error occurred while generating the range");
@@ -1078,9 +1073,9 @@ test("Handling error effects", () => {
         expect(errorProto).toBeInstanceOf(Error);
         expect(errorProto.name).toBe("TypeError");
         expect(errorProto.constructor.name).toBe("TypeError");
-        expect(e);
       }
     }
+    expect(thrown).toBe(true);
 
     const range7 = (start: number, stop: number) =>
       range(start, stop).catchAllAndThrow((error, message) => `Error(${error}): ${message}`);
@@ -1099,9 +1094,9 @@ test("Handling error effects", () => {
         expect(errorProto).toBeInstanceOf(Error);
         expect(errorProto.name).toBe("TypeError");
         expect(errorProto.constructor.name).toBe("TypeError");
-        expect(e);
       }
     }
+    expect(thrown).toBe(true);
   }
 });
 
@@ -1113,7 +1108,7 @@ test("Abstracting handlers", () => {
       set: <T>(value: T): Effected<State<T>, void> => effect("state.set")<[value: T], void>(value),
     };
 
-    const sumDown = (sum: number = 0): Effected<State<number>, number> =>
+    const sumDown = (sum = 0): Effected<State<number>, number> =>
       effected(function* () {
         const n = yield* state.get<number>();
         if (n <= 0) return sum;

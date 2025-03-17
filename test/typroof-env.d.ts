@@ -1,5 +1,6 @@
-import type { Effect, Effected, Unresumable } from "../src";
 import type { Serializer, Stringify, Type } from "typroof/plugin";
+
+import type { Effect, Effected, Unresumable } from "../src";
 
 declare module "typroof/plugin" {
   interface StringifySerializerRegistry {

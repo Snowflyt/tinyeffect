@@ -1,10 +1,33 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "allowImportingTsExtensions": false,
-    "noEmit": false,
-    "outDir": "dist"
+    "target": "ES2015",
+    "composite": true,
+    "useDefineForClassFields": false,
+    "lib": ["ES2015", "ES2018.AsyncGenerator"],
+    "module": "ES2015",
+    "types": [],
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "outDir": "dist",
+
+    /* Linting */
+    "strict": true,
+    "checkJs": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+
+    /* Type */
+    "declaration": true
   },
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.proof.ts", "src/**/*.spec.ts", "src/**/*.bench.ts"],
   "tsc-alias": {
     "resolveFullPaths": true
   }

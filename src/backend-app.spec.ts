@@ -2,13 +2,10 @@
  * A simple example of a backend application based on tinyeffect.
  */
 
-/* eslint-disable require-yield */
-
 import { expect, test, vi } from "vitest";
 
-import { dependency, effect, effected, error } from ".";
-
 import type { Effect, EffectFactory, Effected } from ".";
+import { dependency, effect, effected, error } from ".";
 
 /******************
  * Implementation *
@@ -123,6 +120,7 @@ test("app", () => {
   const program = effected(function* () {
     yield* userService.login("Alice", "password");
     if (!(yield* db.user.findByName("Bob"))) {
+      // eslint-disable-next-line sonarjs/no-hardcoded-passwords
       const user = yield* userService.createUser({ name: "Bob", password: "secret", role: "user" });
       yield* println("Created user:", user);
     }

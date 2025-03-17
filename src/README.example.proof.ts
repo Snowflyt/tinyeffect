@@ -1,11 +1,9 @@
 /* eslint-disable sonarjs/no-identical-functions */
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 
 import { equal, expect, extend, test, error as triggerError } from "typroof";
 
-import { Effected, defineHandlerFor, dependency, effect, effected, effectify, error } from ".";
-
 import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from ".";
+import { Effected, defineHandlerFor, dependency, effect, effected, effectify, error } from ".";
 
 type User = { id: number; name: string; role: "admin" | "user" };
 
@@ -371,7 +369,7 @@ test("Handling return values", () => {
     const defer: EffectFactory<Defer> = effect("defer");
 
     const deferHandler = defineHandlerFor<Defer>().with((effected) => {
-      const deferredActions: Array<() => void> = [];
+      const deferredActions: (() => void)[] = [];
 
       return effected
         .resume("defer", (fn) => {
@@ -605,7 +603,7 @@ test("Abstracting handlers", () => {
       set: <T>(value: T): Effected<State<T>, void> => effect("state.set")<[value: T], void>(value),
     };
 
-    const sumDown = (sum: number = 0): Effected<State<number>, number> =>
+    const sumDown = (sum = 0): Effected<State<number>, number> =>
       effected(function* () {
         const n = yield* state.get<number>();
         if (n <= 0) return sum;

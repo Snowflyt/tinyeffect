@@ -36,20 +36,20 @@ const fibPipeT = (n: number): Effected<never, number> => {
 };
 
 /* Effect */
-const fibGenE = (n: number): Effect.Effect<number, never, never> =>
+const fibGenE = (n: number): Effect.Effect<number> =>
   Effect.gen(function* () {
     if (n <= 1) return n;
     return (yield* fibGenE(n - 1)) + (yield* fibGenE(n - 2));
   });
 
-const fibPipeE1 = (n: number): Effect.Effect<number, never, never> => {
+const fibPipeE1 = (n: number): Effect.Effect<number> => {
   if (n <= 1) return Effect.succeed(n);
   return fibPipeE1(n - 1).pipe(
     Effect.flatMap((a) => fibPipeE1(n - 2).pipe(Effect.map((b) => a + b))),
   );
 };
 
-const fibPipeE2 = (n: number): Effect.Effect<number, never, never> => {
+const fibPipeE2 = (n: number): Effect.Effect<number> => {
   if (n <= 1) return Effect.succeed(n);
   return fibPipeE2(n - 1).pipe(
     Effect.andThen((a) => fibPipeE2(n - 2).pipe(Effect.andThen((b) => a + b))),

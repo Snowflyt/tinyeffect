@@ -1,7 +1,6 @@
 import { UnhandledEffectError } from "./errors";
-import { Effect } from "./types";
-
 import type { UnhandledEffect, Unresumable } from "./types";
+import { Effect } from "./types";
 
 /**
  * Create a function that returns an {@link Effected} instance (an effected program) which yields a
@@ -156,13 +155,14 @@ export function dependency<Name extends string>(
 }
 
 type DependencyName<E extends Effect> =
-  E extends Effect<`dependency:${infer Name}`, [], unknown> ? Name : never;
+  E extends Effect<`dependency:${infer Name}`, []> ? Name : never;
 
 /**
  * Define a handler that transforms an effected program into another one.
  *
  * It is just a simple wrapper to make TypeScript infer the types correctly, and simply returns the
  * function you pass to it.
+ * @returns
  *
  * @example
  * ```typescript
@@ -188,18 +188,12 @@ type DependencyName<E extends Effect> =
  * ```
  */
 export function defineHandlerFor<E extends Effect, R>(): {
-  with: <
-    S extends EffectedDraft<E, Effect, unknown>,
-    H extends (effected: EffectedDraft<E, E, R>) => S,
-  >(
+  with: <S extends EffectedDraft<E>, H extends (effected: EffectedDraft<E, E, R>) => S>(
     handler: H,
   ) => H;
 };
 export function defineHandlerFor<E extends Effect>(): {
-  with: <
-    S extends EffectedDraft<E, Effect, unknown>,
-    H extends <R>(effected: EffectedDraft<E, E, R>) => S,
-  >(
+  with: <S extends EffectedDraft<E>, H extends <R>(effected: EffectedDraft<E, E, R>) => S>(
     handler: H,
   ) => H;
 };
@@ -281,6 +275,8 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
       (
         { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
         ...payloads: Payloads
+        // TODO: Define a type alias to reduce repetition
+        // eslint-disable-next-line sonarjs/use-type-alias
       ) => void | Generator<F, void, unknown> | Effected<F, void>
     : E extends Effect<Name, infer Payloads, infer R> ?
       (
@@ -474,6 +470,8 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   resume<Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
     effect: Name,
     handler: E extends Effect<Name, infer Payloads, infer R> ?
+      // TODO: Define a type alias to reduce repetition
+      // eslint-disable-next-line sonarjs/use-type-alias
       (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
     : never,
   ): Effected<Exclude<E, Effect<Name>> | F, R>;
@@ -1121,7 +1119,7 @@ const isGenerator = (value: unknown): value is Generator =>
  *
  * This is only used internally as an alternative to generators to reduce the overhead of creating
  * generator functions.
- * @param value
+ * @param value The value to check.
  * @returns
  */
 const isEffectedIterator = (
@@ -1154,11 +1152,7 @@ const renameFunction = <F extends (...args: never) => unknown>(fn: F, name: stri
   });
 
 const buildErrorClass = (name: string) => {
-  const ErrorClass = class extends Error {
-    constructor(message?: string) {
-      super(message);
-    }
-  };
+  const ErrorClass = class extends Error {};
   let errorName = capitalize(name);
   if (!errorName.endsWith("Error") && !errorName.endsWith("error")) errorName += "Error";
   Object.defineProperty(ErrorClass, "name", {
@@ -1194,7 +1188,7 @@ const stringifyEffect = (effect: Effect) =>
  * @param space The number of spaces to use for indentation.
  * @returns
  */
-const stringify = (x: unknown, space: number = 0): string => {
+const stringify = (x: unknown, space = 0): string => {
   const seen = new WeakSet();
   const identifierRegex = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
@@ -1214,6 +1208,7 @@ const stringify = (x: unknown, space: number = 0): string => {
 
       const nextLevel = level + 1;
       const isClassInstance =
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         value.constructor && value.constructor.name && value.constructor.name !== "Object";
       const className = isClassInstance ? `${value.constructor.name} ` : "";
 

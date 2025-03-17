@@ -1,6 +1,6 @@
-/* eslint-disable @typescript-eslint/ban-ts-comment */
 import { describe, expect, it, vi } from "vitest";
 
+import type { EffectFactory, Unresumable } from ".";
 import {
   Effect,
   Effected,
@@ -14,8 +14,6 @@ import {
   runAsync,
   runSync,
 } from ".";
-
-import type { EffectFactory, Unresumable } from ".";
 
 const add42 = effect("add42")<[n: number], number>;
 const now = dependency("now")<Date>;
@@ -243,8 +241,8 @@ describe("effected", () => {
           .then((value) => {
             resume(value);
           })
-          .catch((error) => {
-            terminate(error);
+          .catch((error: unknown) => {
+            terminate(error as string);
           });
       });
 
@@ -430,6 +428,7 @@ describe("effected", () => {
 
   it("should log a warning if using `new Effected` instead of `effected`", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // eslint-disable-next-line sonarjs/constructor-for-side-effects
     new (Effected as any)(function* () {});
     expect(warnSpy).toHaveBeenCalledWith(
       "You should not call the constructor of `Effected` directly. Use `effected` instead.",
@@ -512,7 +511,7 @@ describe("effected", () => {
       yield* raise();
     })
       .handle(
-        function isRaise(name): name is "raise" {
+        function isRaise(name: string): name is "raise" {
           return name === "raise";
         },
         ({ resume }) => {
