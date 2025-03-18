@@ -555,9 +555,8 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   ): Effected<E | F, S>;
   andThen<S>(handler: (value: R) => S): Effected<E, S>;
   andThen(handler: (value: R) => unknown): Effected<Effect, unknown> {
-    const iterator = this[Symbol.iterator]();
-
     return effected(() => {
+      const iterator = this[Symbol.iterator]();
       let originalIteratorDone = false;
       let appendedIterator: Iterator<Effect, unknown, unknown>;
       return {
