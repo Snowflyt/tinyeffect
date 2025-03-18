@@ -69,7 +69,6 @@ const askCurrentUser = dependency("currentUser")<User | null>;
 const authenticationError = error("authentication");
 const unauthorizedError = error("unauthorized");
 
-// prettier-ignore
 const requiresAdmin = () => effected(function* () {
   const currentUser = yield* askCurrentUser();
   if (!currentUser) return yield* authenticationError();
@@ -77,14 +76,13 @@ const requiresAdmin = () => effected(function* () {
     return yield* unauthorizedError(`User "${currentUser.name}" is not an admin`);
 });
 
-// prettier-ignore
 const createUser = (user: Omit<User, "id">) => effected(function* () {
   yield* requiresAdmin();
   const id = yield* executeSQL("INSERT INTO users (name) VALUES (?)", user.name);
   const savedUser: User = { id, ...user };
   yield* println("User created:", savedUser);
   return savedUser;
-});
+});
 ```
 
 The code above defines five effects: `println`, `executeSQL`, `currentUser`, `authentication`, and `unauthorized`. Effects can be defined using `effect`, with `dependency` and `error` as wrappers for specific purposes.
