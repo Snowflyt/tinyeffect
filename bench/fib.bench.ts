@@ -16,7 +16,7 @@
 import { Effect } from "effect";
 import { bench, describe } from "vitest";
 
-import { Effected, effected } from ".";
+import { Effected, effected } from "../src";
 
 const fib = (n: number): number => {
   if (n <= 1) return n;

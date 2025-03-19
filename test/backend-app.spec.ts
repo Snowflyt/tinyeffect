@@ -4,8 +4,8 @@
 
 import { expect, test, vi } from "vitest";
 
-import type { Effect, EffectFactory, Effected } from ".";
-import { dependency, effect, effected, error } from ".";
+import type { Effect, EffectFactory, Effected } from "../src";
+import { dependency, effect, effected, error } from "../src";
 
 /******************
  * Implementation *

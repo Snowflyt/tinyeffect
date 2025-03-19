@@ -5,8 +5,8 @@
 
 import { expect, test } from "vitest";
 
-import type { Effect, EffectFactory, InferEffect } from ".";
-import { Effected, defineHandlerFor, dependency, effect, effected, effectify } from ".";
+import type { Effect, EffectFactory, InferEffect } from "../src";
+import { Effected, defineHandlerFor, dependency, effect, effected, effectify } from "../src";
 
 type Println = Effect<"println", unknown[], void>;
 const println: EffectFactory<Println> = effect("println");

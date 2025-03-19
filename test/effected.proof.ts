@@ -1,9 +1,14 @@
 import { beNever, describe, equal, expect, it, error as triggerError } from "typroof";
 
-import type { Effected } from "./effected";
-import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from "./types";
-
-import { dependency, effect, effected, error } from ".";
+import { dependency, effect, effected, error } from "../src";
+import type { Effected } from "../src/effected";
+import type {
+  Effect,
+  EffectFactory,
+  InferEffect,
+  UnhandledEffect,
+  Unresumable,
+} from "../src/types";
 
 const add42 = effect("add42")<[n: number], number>;
 const now = effect("now")<[], Date>;

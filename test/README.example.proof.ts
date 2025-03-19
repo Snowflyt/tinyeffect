@@ -2,8 +2,8 @@
 
 import { equal, expect, extend, test, error as triggerError } from "typroof";
 
-import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from ".";
-import { Effected, defineHandlerFor, dependency, effect, effected, effectify, error } from ".";
+import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from "../src";
+import { Effected, defineHandlerFor, dependency, effect, effected, effectify, error } from "../src";
 
 type User = { id: number; name: string; role: "admin" | "user" };
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { EffectFactory, Unresumable } from ".";
+import type { EffectFactory, Unresumable } from "../src";
 import {
   Effect,
   Effected,
@@ -13,7 +13,7 @@ import {
   error,
   runAsync,
   runSync,
-} from ".";
+} from "../src";
 
 const add42 = effect("add42")<[n: number], number>;
 const now = dependency("now")<Date>;

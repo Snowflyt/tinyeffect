@@ -2,7 +2,7 @@
 
 import { expect, test, vi } from "vitest";
 
-import type { Effect, EffectFactory, Unresumable } from ".";
+import type { Effect, EffectFactory, Unresumable } from "../src";
 import {
   Effected,
   UnhandledEffectError,
@@ -12,7 +12,7 @@ import {
   effected,
   effectify,
   error,
-} from ".";
+} from "../src";
 
 test("banner", async () => {
   type User = { id: number; name: string; role: "admin" | "user" };

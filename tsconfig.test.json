@@ -7,6 +7,6 @@
     "module": "ESNext",
     "types": ["node"]
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*", "test/**/*", "bench/**/*"],
   "exclude": []
 }
