@@ -1176,7 +1176,12 @@ test("Effects without generators", () => {
 
   const fib3 = (n: number): Effected<never, number> => {
     if (n <= 1) return Effected.from(() => n);
-    return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
+    return fib3(n - 1).andThen((a) => fib3(n - 2).andThen((b) => a + b));
+  };
+
+  const fib4 = (n: number): Effected<never, number> => {
+    if (n <= 1) return Effected.of(n);
+    return fib4(n - 1).flatMap((a) => fib4(n - 2).map((b) => a + b));
   };
 
   expect(fib1(10).runSync()).toBe(55);

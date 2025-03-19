@@ -1135,7 +1135,7 @@ const range = (start: number, stop: number) => range(start, stop).with(handleErr
 const range = (start: number, stop: number) => handleErrorAsResult(range(start, stop));
 ```
 
-### Effects without generators
+### Effects without generators (Pipeline syntax)
 
 The fundamental logic of tinyeffect is _not_ dependent on generators. An effected program (represented as an `Effected` instance) is essentially an iterable object that implements a `[Symbol.iterator](): Iterator<Effect>` method. Although using the `effected` helper function in conjunction with a generator allows you to write more imperative-style code with `yield*` to manage effects, this is not the only way to handle them.
 
@@ -1164,4 +1164,17 @@ const fib2 = (n: number): Effected<never, number> => {
 
 Understanding the definition of `fib2` may take some time, but it serves as an effective demonstration of working with effects without generators. The expression `fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b))` can be interpreted as follows: “After resolving `fib2(n - 1)`, assign the result to `a`, then resolve `fib2(n - 2)` and assign the result to `b`. Finally, return `a + b`.”
 
-It’s important to note that the first `.andThen()` call behaves like a `flatMap` operation, as it takes a function that returns another `Effected` instance and “flattens” the result. However, in tinyeffect, the distinction between `map` and `flatMap` is not explicit — `.andThen()` will automatically flatten the result if it’s an `Effected` instance, just like `Promise.prototype.then()` in JavaScript. This allows for seamless chaining of `.andThen()` calls as needed.
+You can compare `Effected` with `Promise` in JavaScript. Just like `Promise.prototype.then(handler)` allows you to chain multiple promises together, `Effected.prototype.andThen(handler)` allows you to chain multiple effected programs together. If a handler returns a generator or another effected program, it will be automatically flattened, similar to how `Promise.prototype.then()` works in JavaScript.
+
+Another way to think of `Effected` is as a container for a delayed computation (or _monad_, if you come from a functional programming background). The `Effected` instance itself doesn't perform any computation; it only represents a sequence of effects that will be executed when you call `.runSync()` or `.runAsync()`.
+
+Actually, tinyeffect provides two more methods, `.map()` and `.flatMap()`, which explicitly indicate whether you want to flatten the result or not. The `fib2` function can be rewritten using `flatMap/map` as follows:
+
+```typescript
+const fib2 = (n: number): Effected<never, number> => {
+  if (n <= 1) return Effected.of(n);
+  return fib2(n - 1).flatMap((a) => fib2(n - 2).map((b) => a + b));
+};
+```
+
+While `andThen` is more concise and easier to read, `flatMap` and `map` provide more control over the result. However, it is not recommended to use `flatMap` and `map` directly in most cases, as they can make the code harder to read and understand, and provide very little improvement in performance.

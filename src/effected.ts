@@ -545,10 +545,62 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Maps the return value using a pure function without handling effects.
+   * Optimized for the simple value transformation case.
+   * @param mapper The function to transform the result value.
+   * @returns
+   *
+   * @since 0.3.2
+   */
+  map<S>(mapper: (value: R) => S): Effected<E, S> {
+    return effected(() => {
+      const iterator = this[Symbol.iterator]();
+      return {
+        next: (...args: [] | [unknown]) => {
+          const result = iterator.next(...args);
+          if (!result.done) return result;
+          return { done: true, value: mapper(result.value) };
+        },
+      };
+    });
+  }
+
+  /**
+   * Chains an effected program after the current one, where the chained effected program will
+   * receive the return value of the current one.
+   * @param mapper A function that returns an effected program or generator.
+   * @returns
+   *
+   * @since 0.3.2
+   */
+  flatMap<S, F extends Effect = never>(
+    mapper: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
+  ): Effected<E | F, S> {
+    return effected(() => {
+      const iterator = this[Symbol.iterator]();
+      let originalDone = false;
+      let appendedIterator: Iterator<Effect, unknown, unknown>;
+      return {
+        next: (...args: [] | [R]) => {
+          if (originalDone) return appendedIterator.next(...args);
+          const result = iterator.next(...args);
+          if (!result.done) return result;
+          originalDone = true;
+          const it = mapper(result.value);
+          appendedIterator = it[Symbol.iterator]();
+          return appendedIterator.next();
+        },
+      };
+    }) as never;
+  }
+
+  /**
    * Chains another function or effected program after the current one, where the chained function
    * or effected program will receive the return value of the current one.
    * @param handler The function or effected program to chain after the current one.
    * @returns
+   *
+   * @since 0.3.0
    */
   andThen<S, F extends Effect = never>(
     handler: (value: R) => Generator<F, S, unknown> | Effected<F, S> | S,
@@ -820,6 +872,12 @@ interface EffectedDraft<
     effect: (name: E["name"]) => name is Name,
     handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
   ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
+
+  map<S>(mapper: (value: R) => S): EffectedDraft<P, E, S>;
+
+  flatMap<S, F extends Effect = never>(
+    mapper: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
+  ): EffectedDraft<P, E | F, S>;
 
   andThen<S, F extends Effect = never>(
     handler: (value: R) => Generator<F, S, unknown> | Effected<F, S> | S,

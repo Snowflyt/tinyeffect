@@ -620,6 +620,358 @@ describe("effected", () => {
   });
 });
 
+describe("Effected#map", () => {
+  it("should transform the return value using a pure function", () => {
+    const program = Effected.of(42).map((x) => x * 2);
+    expect(program.runSync()).toBe(84);
+  });
+
+  it("should allow multiple executions with consistent results", () => {
+    const program = Effected.of(21).map((x) => x * 2);
+    expect(program.runSync()).toBe(42);
+    expect(program.runSync()).toBe(42);
+  });
+
+  it("should allow chaining multiple map operations", () => {
+    const program = Effected.of(5)
+      .map((x) => x * 2)
+      .map((x) => x + 10);
+    expect(program.runSync()).toBe(20);
+  });
+
+  it("should maintain independence between executions with stateful transformations", () => {
+    let counter = 0;
+    const program = Effected.of(10).map((x) => {
+      counter++;
+      return x + counter;
+    });
+
+    expect(program.runSync()).toBe(11); // 10 + 1
+    expect(counter).toBe(1);
+
+    expect(program.runSync()).toBe(12); // 10 + 2
+    expect(counter).toBe(2);
+  });
+
+  it("should pass through effects from the source program before applying transformation", () => {
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      yield* log("before");
+      return 42;
+    }).map((x) => x * 2);
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe(84);
+    expect(logs).toEqual(["before"]);
+  });
+
+  it("should handle multiple yielded effects correctly", () => {
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      yield* log("first");
+      yield* log("second");
+      return 10;
+    }).map((x) => x.toString());
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe("10");
+    expect(logs).toEqual(["first", "second"]);
+  });
+
+  it("should only apply the transformation to the final result", () => {
+    const getData = effect("getData")<[], number>;
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      const data = yield* getData();
+      yield* log(`Got data: ${data}`);
+      return data;
+    }).map((x) => x * 2);
+
+    const result = program
+      .resume("getData", () => 21)
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe(42);
+    expect(logs).toEqual(["Got data: 21"]);
+  });
+});
+
+describe("Effected#flatMap", () => {
+  it("should chain effectful computations", () => {
+    const program = Effected.of(42).flatMap((x) => Effected.of(x * 2));
+    expect(program.runSync()).toBe(84);
+  });
+
+  it("should allow multiple executions with consistent results", () => {
+    const program = Effected.of(21).flatMap((x) => Effected.of(x * 2));
+    expect(program.runSync()).toBe(42);
+    expect(program.runSync()).toBe(42);
+  });
+
+  it("should work with generator functions", () => {
+    const add = effect("add")<[a: number, b: number], number>;
+
+    const program = Effected.of(10).flatMap(function* (x) {
+      const result = yield* add(x, 5);
+      return result;
+    });
+
+    expect(program.resume("add", (a, b) => a + b).runSync()).toBe(15);
+  });
+
+  it("should handle effects correctly when run multiple times", () => {
+    const add = effect("add")<[a: number, b: number], number>;
+    const logs: string[] = [];
+
+    const program = Effected.of(10)
+      .flatMap(function* (x) {
+        const result = yield* add(x, 5);
+        return result;
+      })
+      .resume("add", (a, b) => {
+        logs.push(`Adding ${a} + ${b}`);
+        return a + b;
+      });
+
+    expect(program.runSync()).toBe(15);
+    expect(logs).toEqual(["Adding 10 + 5"]);
+
+    // Second execution should be independent
+    logs.length = 0;
+    expect(program.runSync()).toBe(15);
+    expect(logs).toEqual(["Adding 10 + 5"]);
+  });
+
+  it("should pass through effects from the source program before invoking mapper", () => {
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      yield* log("before flatMap");
+      return 10;
+    }).flatMap((value) =>
+      effected(function* () {
+        yield* log("in mapper");
+        return value * 2;
+      }),
+    );
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe(20);
+    expect(logs).toEqual(["before flatMap", "in mapper"]);
+  });
+
+  it("should handle complex patterns of yielded effects in both source and mapper", () => {
+    const getA = effect("getA")<[], number>;
+    const getB = effect("getB")<[], number>;
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      const a = yield* getA();
+      yield* log(`a = ${a}`);
+      return a;
+    }).flatMap((a) =>
+      effected(function* () {
+        const b = yield* getB();
+        yield* log(`b = ${b}`);
+        return a + b;
+      }),
+    );
+
+    const result = program
+      .resume("getA", () => 10)
+      .resume("getB", () => 20)
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe(30);
+    expect(logs).toEqual(["a = 10", "b = 20"]);
+  });
+
+  it("should seamlessly transition between source and mapper programs", () => {
+    const step = effect("step")<[stage: string], number>;
+    const values: string[] = [];
+
+    const program = effected(function* () {
+      const a = yield* step("source-begin");
+      const b = yield* step("source-end");
+      return a + b;
+    }).flatMap((sum) =>
+      effected(function* () {
+        const c = yield* step("mapper-begin");
+        const d = yield* step("mapper-end");
+        return sum + c + d;
+      }),
+    );
+
+    const result = program
+      .resume("step", (stage) => {
+        values.push(stage);
+        return values.length * 10;
+      })
+      .runSync();
+
+    expect(result).toBe(100); // 10 + 20 + 30 + 40
+    expect(values).toEqual(["source-begin", "source-end", "mapper-begin", "mapper-end"]);
+  });
+});
+
+describe("Effected#andThen", () => {
+  it("should transform values using a pure function", () => {
+    const program = Effected.of(42).andThen((x) => x * 2);
+    expect(program.runSync()).toBe(84);
+  });
+
+  it("should chain effectful computations", () => {
+    const program = Effected.of(42).andThen((x) => Effected.of(x * 2));
+    expect(program.runSync()).toBe(84);
+  });
+
+  it("should allow multiple executions with consistent results", () => {
+    const program = Effected.of(21).andThen((x) => x * 2);
+    expect(program.runSync()).toBe(42);
+    expect(program.runSync()).toBe(42);
+
+    const program2 = Effected.of(21).andThen((x) => Effected.of(x * 2));
+    expect(program2.runSync()).toBe(42);
+    expect(program2.runSync()).toBe(42);
+  });
+
+  it("should work with generator functions", () => {
+    const add = effect("add")<[a: number, b: number], number>;
+
+    const program = Effected.of(10).andThen(function* (x) {
+      const result = yield* add(x, 5);
+      return result;
+    });
+
+    expect(program.resume("add", (a, b) => a + b).runSync()).toBe(15);
+  });
+
+  it("should handle errors independently across executions", () => {
+    const myError = error("myError");
+    const errorCounts: { [key: string]: number } = {};
+
+    const program = Effected.of(42)
+      .andThen(function* (x) {
+        if (x === 42) yield* myError("Error on 42");
+        return x * 2;
+      })
+      .catch("myError", (msg) => {
+        errorCounts[msg || "unknown"] = (errorCounts[msg || "unknown"] || 0) + 1;
+        return -1;
+      });
+
+    expect(program.runSync()).toBe(-1);
+    expect(errorCounts["Error on 42"]).toBe(1);
+
+    expect(program.runSync()).toBe(-1);
+    expect(errorCounts["Error on 42"]).toBe(2);
+  });
+
+  it("should handle yielded effects when chaining with a pure function", () => {
+    const fetchNumber = effect("fetchNumber")<[], number>;
+
+    const program = effected(function* () {
+      const value = yield* fetchNumber();
+      return value;
+    }).andThen((x) => x * 2);
+
+    expect(program.resume("fetchNumber", () => 21).runSync()).toBe(42);
+  });
+
+  it("should handle yielded effects when chaining with an effectful computation", () => {
+    const fetchNumber = effect("fetchNumber")<[], number>;
+    const processNumber = effect("processNumber")<[n: number], number>;
+
+    const program = effected(function* () {
+      const value = yield* fetchNumber();
+      return value;
+    }).andThen(function* (x) {
+      const processed = yield* processNumber(x);
+      return processed;
+    });
+
+    expect(
+      program
+        .resume("fetchNumber", () => 10)
+        .resume("processNumber", (n) => n * 2)
+        .runSync(),
+    ).toBe(20);
+  });
+
+  it("should preserve handler context when chaining multiple operations with effects", () => {
+    const read = effect("read")<[key: string], string>;
+    const write = effect("write")<[key: string, value: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      const value = yield* read("name");
+      yield* write("greeting", `Hello, ${value}!`);
+      return "done-1";
+    }).andThen(function* (result) {
+      logs.push(`First stage: ${result}`);
+      const greeting = yield* read("greeting");
+      return greeting;
+    });
+
+    const data: Record<string, string> = {};
+
+    const result = program
+      .resume("read", (key) => data[key] || "")
+      .resume("write", (key, value) => {
+        data[key] = value;
+      })
+      .runSync();
+
+    expect(result).toBe("Hello, !");
+    expect(logs).toEqual(["First stage: done-1"]);
+    expect(data).toEqual({ greeting: "Hello, !" });
+
+    // Run again with different data
+    data.name = "World";
+    logs.length = 0;
+
+    const result2 = program
+      .resume("read", (key) => data[key] || "")
+      .resume("write", (key, value) => {
+        data[key] = value;
+      })
+      .runSync();
+
+    expect(result2).toBe("Hello, World!");
+    expect(logs).toEqual(["First stage: done-1"]);
+    expect(data).toEqual({ name: "World", greeting: "Hello, World!" });
+  });
+});
+
 describe("Effected#tap", () => {
   it("should run a side effect and return the original value", () => {
     const logs: unknown[][] = [];
@@ -664,6 +1016,54 @@ describe("Effected#tap", () => {
         .runSync(),
     ).toBe(42);
     expect(logs).toEqual(["tap", 42]);
+  });
+});
+
+describe("Effected transformation methods composition", () => {
+  const add = effect("add")<[a: number, b: number], number>;
+  const multiply = effect("multiply")<[a: number, b: number], number>;
+  const log = effect("log")<[message: string], void>;
+
+  it("should correctly compose map, flatMap, tap and andThen", () => {
+    const logs: string[] = [];
+    const sideEffectValues: number[] = [];
+
+    const program = Effected.of(5)
+      .map((x) => x + 10)
+      .tap((x) => {
+        sideEffectValues.push(x);
+      })
+      .flatMap(function* (x) {
+        yield* log(`Value is now ${x}`);
+        const sum = yield* add(x, 5);
+        return sum;
+      })
+      .tap(function* (x) {
+        yield* log(`After adding: ${x}`);
+        sideEffectValues.push(x);
+      })
+      .andThen(function* (x) {
+        const product = yield* multiply(x, 2);
+        return product;
+      });
+
+    const handledProgram = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .resume("add", (a, b) => a + b)
+      .resume("multiply", (a, b) => a * b);
+
+    expect(handledProgram.runSync()).toBe(40); // (5 + 10 + 5) * 2 = 40
+    expect(logs).toEqual(["Value is now 15", "After adding: 20"]);
+    expect(sideEffectValues).toEqual([15, 20]);
+
+    // Run again to ensure consistent results
+    logs.length = 0;
+    sideEffectValues.length = 0;
+    expect(handledProgram.runSync()).toBe(40);
+    expect(logs).toEqual(["Value is now 15", "After adding: 20"]);
+    expect(sideEffectValues).toEqual([15, 20]);
   });
 });
 

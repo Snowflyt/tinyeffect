@@ -30,9 +30,14 @@ const fibGenT = (n: number): Effected<never, number> =>
     return (yield* fibGenT(n - 1)) + (yield* fibGenT(n - 2));
   });
 
-const fibPipeT = (n: number): Effected<never, number> => {
+const fibPipeT1 = (n: number): Effected<never, number> => {
   if (n <= 1) return Effected.of(n);
-  return fibPipeT(n - 1).andThen((a) => fibPipeT(n - 2).andThen((b) => a + b));
+  return fibPipeT2(n - 1).flatMap((a) => fibPipeT1(n - 2).map((b) => a + b));
+};
+
+const fibPipeT2 = (n: number): Effected<never, number> => {
+  if (n <= 1) return Effected.of(n);
+  return fibPipeT2(n - 1).andThen((a) => fibPipeT2(n - 2).andThen((b) => a + b));
 };
 
 /* Effect */
@@ -60,7 +65,8 @@ const fibPipeE2 = (n: number): Effect.Effect<number> => {
 describe("fib(20)", () => {
   bench("[baseline] fib(20)", () => void fib(20));
   bench("[tinyeffect] fibGen(20)", () => void fibGenT(20).runSync());
-  bench("[tinyeffect] fibPipe(20)", () => void fibPipeT(20).runSync());
+  bench("[tinyeffect] fibPipe(20) with map/flatMap", () => void fibPipeT1(20).runSync());
+  bench("[tinyeffect] fibPipe(20) with andThen", () => void fibPipeT2(20).runSync());
   bench("[Effect] fibGen(20)", () => void Effect.runSync(fibGenE(20)));
   bench("[Effect] fibPipe(20) with map/flatMap", () => void Effect.runSync(fibPipeE1(20)));
   bench("[Effect] fibPipe(20) with andThen", () => void Effect.runSync(fibPipeE2(20)));
@@ -69,7 +75,8 @@ describe("fib(20)", () => {
 describe("fib(30)", () => {
   bench("[baseline] fib(30)", () => void fib(30));
   bench("[tinyeffect] fibGen(30)", () => void fibGenT(30).runSync());
-  bench("[tinyeffect] fibPipe(30)", () => void fibPipeT(30).runSync());
+  bench("[tinyeffect] fibPipe(30) with map/flatMap", () => void fibPipeT1(30).runSync());
+  bench("[tinyeffect] fibPipe(30) with andThen", () => void fibPipeT2(30).runSync());
   bench("[Effect] fibGen(30)", () => void Effect.runSync(fibGenE(30)));
   bench("[Effect] fibPipe(30) with map/flatMap", () => void Effect.runSync(fibPipeE1(30)));
   bench("[Effect] fibPipe(30) with andThen", () => void Effect.runSync(fibPipeE2(30)));
