@@ -1179,19 +1179,20 @@ const stringifyEffect = (effect: Effect) =>
   `${stringifyEffectName(effect.name)}(${effect.payloads.map(stringify).join(", ")})`;
 
 /**
- * Stringify an object, handling common cases that simple `JSON.stringify` does not handle, e.g.,
- * `undefined`, `bigint`, `function`, `symbol`. Circular references are considered.
+ * Stringify an object to provide better debugging experience, handling common cases that simple
+ * `JSON.stringify` does not handle, e.g., `undefined`, `bigint`, `function`, `symbol`, `Date`.
+ * Circular references are considered.
+ *
+ * This is a simple port of the [showify](https://github.com/Snowflyt/showify/blob/7759b8778d54f686c85eba4d88b2dac2afdbcdd6/packages/lite/src/index.ts)
+ * package, which is a library for stringifying objects in a human-readable way.
  * @param x The object to stringify.
- * @param space The number of spaces to use for indentation.
  * @returns
  */
-const stringify = (x: unknown, space = 0): string => {
+const stringify = (x: unknown): string => {
   const seen = new WeakSet();
   const identifierRegex = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-  const indent = (level: number): string => (space > 0 ? " ".repeat(level * space) : "");
-
-  const serialize = (value: unknown, level: number): string => {
+  const serialize = (value: unknown): string => {
     if (typeof value === "bigint") return `${value as any}n`;
     if (typeof value === "function")
       return value.name ? `[Function: ${value.name}]` : "[Function (anonymous)]";
@@ -1203,18 +1204,35 @@ const stringify = (x: unknown, space = 0): string => {
       if (seen.has(value)) return "[Circular]";
       seen.add(value);
 
-      const nextLevel = level + 1;
+      // Handle special object types
+      if (value instanceof Date) return value.toISOString();
+
+      if (value instanceof RegExp) return value.toString();
+
+      if (value instanceof Map) {
+        const entries = Array.from(value.entries())
+          .map(([k, v]) => `${serialize(k)} => ${serialize(v)}`)
+          .join(", ");
+        return `Map(${value.size}) ` + (entries ? `{ ${entries} }` : "{}");
+      }
+
+      if (value instanceof Set) {
+        const values = Array.from(value)
+          .map((v) => serialize(v))
+          .join(", ");
+        return `Set(${value.size}) ` + (values ? `{ ${values} }` : "{}");
+      }
+
+      // Handle arrays and objects
       const isClassInstance =
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         value.constructor && value.constructor.name && value.constructor.name !== "Object";
-      const className = isClassInstance ? `${value.constructor.name} ` : "";
+      const className = isClassInstance ? value.constructor.name : "";
 
       if (Array.isArray(value)) {
-        const arrayItems = value
-          .map((item) => serialize(item, nextLevel))
-          .join(space > 0 ? `,\n${indent(nextLevel)}` : ", ");
-        let result = `[${space > 0 ? "\n" + indent(nextLevel) : ""}${arrayItems}${space > 0 ? "\n" + indent(level) : ""}]`;
-        if (className !== "Array ") result = `${className.trim()}(${value.length}) ${result}`;
+        const arrayItems = value.map((item) => serialize(item)).join(", ");
+        let result = `[${arrayItems}]`;
+        if (className !== "Array") result = `${className}(${value.length}) ${result}`;
         return result;
       }
 
@@ -1225,17 +1243,17 @@ const stringify = (x: unknown, space = 0): string => {
             : identifierRegex.test(key) ? key
             : JSON.stringify(key);
           const val = (value as Record<string, unknown>)[key as any];
-          return `${space > 0 ? indent(nextLevel) : ""}${keyDisplay}: ${serialize(val, nextLevel)}`;
+          return `${keyDisplay}: ${serialize(val)}`;
         })
-        .join(space > 0 ? `,\n` : ", ");
+        .join(", ");
 
-      return `${className}{${space > 0 ? "\n" : " "}${objectEntries}${space > 0 ? "\n" + indent(level) : " "}}`;
+      return (className ? `${className} ` : "") + (objectEntries ? `{ ${objectEntries} }` : "{}");
     }
 
     return JSON.stringify(value);
   };
 
-  return serialize(x, 0);
+  return serialize(x);
 };
 
 // `console` is not standard in JavaScript. Though rare, it is possible that `console` is not
