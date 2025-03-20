@@ -1177,4 +1177,12 @@ const fib2 = (n: number): Effected<never, number> => {
 };
 ```
 
-While `andThen` is more concise and easier to read, `flatMap` and `map` provide more control over the result. However, it is not recommended to use `flatMap` and `map` directly in most cases, as they can make the code harder to read and understand, and provide very little improvement in performance.
+While `andThen` is more concise and easier to read, `flatMap` and `map` provide more control over the result. However, it is not recommended to use `flatMap` and `map` instead of `andThen` directly in most cases, as they can make the code harder to read and understand, and provide very little improvement in performance.
+
+There’s also an `.as(value)` method which is an alias for `.map(() => value)`. This can be useful when you want to return a constant value from an effect:
+
+```typescript
+Effected.of(42).as("Hello, world!").runSync(); // => "Hello, world!"
+// You can also use `.asVoid()` as a shortcut for `.as(undefined)`
+Effected.of(42).asVoid().runSync(); // => undefined
+```

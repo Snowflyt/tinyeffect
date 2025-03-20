@@ -620,6 +620,127 @@ describe("effected", () => {
   });
 });
 
+describe("Effected#as", () => {
+  it("should replace the return value with a constant value", () => {
+    const program = Effected.of(42).as("replaced");
+    expect(program.runSync()).toBe("replaced");
+  });
+
+  it("should work regardless of the original return value", () => {
+    const program1 = Effected.of(42).as("same");
+    const program2 = Effected.of("different").as("same");
+    const program3 = Effected.of(null).as("same");
+
+    expect(program1.runSync()).toBe("same");
+    expect(program2.runSync()).toBe("same");
+    expect(program3.runSync()).toBe("same");
+  });
+
+  it("should preserve effects from the original program", () => {
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      yield* log("effect before as");
+      return 42;
+    }).as("replaced value");
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe("replaced value");
+    expect(logs).toEqual(["effect before as"]);
+  });
+
+  it("should work with other transformations in a chain", () => {
+    const program = Effected.of(10)
+      .map((x) => x + 5)
+      .as("fixed value")
+      .map((s) => s.toUpperCase());
+
+    expect(program.runSync()).toBe("FIXED VALUE");
+
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const complexProgram = effected(function* () {
+      yield* log("start");
+      return 100;
+    })
+      .map((x) => x * 2)
+      .as({ status: "success" })
+      .tap(function* (result) {
+        yield* log(`got result: ${JSON.stringify(result)}`);
+      });
+
+    const result = complexProgram
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toEqual({ status: "success" });
+    expect(logs).toEqual(["start", 'got result: {"status":"success"}']);
+  });
+});
+
+describe("Effected#asVoid", () => {
+  it("should replace the return value with undefined", () => {
+    const program = Effected.of(42).asVoid();
+    expect(program.runSync()).toBe(undefined);
+
+    // It should work with any original value type
+    expect(Effected.of("string").asVoid().runSync()).toBe(undefined);
+    expect(Effected.of(null).asVoid().runSync()).toBe(undefined);
+    expect(Effected.of({ complex: "object" }).asVoid().runSync()).toBe(undefined);
+  });
+
+  it("should preserve effects while replacing result with undefined", () => {
+    const log = effect("log")<[message: string], void>;
+    const logs: string[] = [];
+
+    const program = effected(function* () {
+      yield* log("processing");
+      return { result: "data" };
+    }).asVoid();
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toBe(undefined);
+    expect(logs).toEqual(["processing"]);
+  });
+
+  it("should work with other transformations in a pipeline", () => {
+    const logs: string[] = [];
+
+    const program = Effected.of(42)
+      .map((n) => n * 2)
+      .tap((n) => {
+        logs.push(`Value: ${n}`);
+      })
+      .asVoid()
+      .tap(() => {
+        logs.push("After asVoid");
+      });
+
+    const result = program.runSync();
+
+    expect(result).toBe(undefined);
+    expect(logs).toEqual(["Value: 84", "After asVoid"]);
+
+    // Should be able to chain after asVoid with proper type inference
+    const program2 = program.andThen(() => "new value");
+    expect(program2.runSync()).toBe("new value");
+  });
+});
+
 describe("Effected#map", () => {
   it("should transform the return value using a pure function", () => {
     const program = Effected.of(42).map((x) => x * 2);

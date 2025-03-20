@@ -545,6 +545,26 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Overwrite the return value of the effected program with a new value.
+   * @param value The new value to return.
+   * @returns
+   *
+   * @since 0.3.2
+   */
+  as<S>(value: S): Effected<E, S> {
+    return this.map(() => value);
+  }
+  /**
+   * Overwrite the return value of the effected program with `void`.
+   * @returns
+   *
+   * @since 0.3.2
+   */
+  asVoid(): Effected<E, void> {
+    return this.as(undefined);
+  }
+
+  /**
    * Maps the return value using a pure function without handling effects.
    * Optimized for the simple value transformation case.
    * @param mapper The function to transform the result value.
@@ -872,6 +892,9 @@ interface EffectedDraft<
     effect: (name: E["name"]) => name is Name,
     handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
   ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
+
+  as<S>(value: S): EffectedDraft<P, E, S>;
+  asVoid(): EffectedDraft<P, E, void>;
 
   map<S>(mapper: (value: R) => S): EffectedDraft<P, E, S>;
 
