@@ -1385,3 +1385,13 @@ const submitOrder = (order: Order) =>
 While the pipeline syntax shown above is more compact, it may not be as readable as the generator syntax for most developers since it involves more nesting.
 
 Both generator syntax and pipeline syntax are fully supported in tinyeffect — choose whichever approach makes your code most readable and maintainable for you and your team. The best choice often depends on the specific task and your team’s preferences.
+
+## FAQ
+
+### What’s the relationship between tinyeffect and Effect?
+
+It is a coincidence that the name “tinyeffect” is similar to [Effect](https://github.com/Effect-TS/effect), a TypeScript ecosystem inspired by the effect ecosystem in Scala. However, “effect” means different things in both libraries. In tinyeffect, “effect” refers to “algebraic effect”, while in Effect, it means “effectful computation”. Both libraries are independent and developed for different purposes.
+
+However, it is not surprising that the two libraries share some similarities, as they both aim to provide a way to handle side effects in a type-safe manner. The `Effect` type in Effect and the `Effected` type in tinyeffect are both monads that abstract effectful computations, and they share similarities in their API design, e.g., `Effect.map()` vs. `Effected.prototype.map()`, `Effect.flatMap()` vs. `Effected.prototype.flatMap()`, `Effect.andThen()` vs. `Effected.prototype.andThen()`, etc.
+
+While sharing some similarities, tinyeffect and Effect are fundamentally different in their design and implementation. tinyeffect is designed to be a lightweight library that focuses on providing a simple and intuitive API for handling side effects, while Effect is designed to be a full-fledged library that provides a comprehensive set of features for building effectful applications. Also, both libraries provide concurrency primitives, but Effect uses a fiber-based concurrency model, whereas tinyeffect uses a simple iterator-based model.
