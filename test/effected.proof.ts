@@ -1,7 +1,7 @@
 import { beNever, describe, equal, expect, it, error as triggerError } from "typroof";
 
 import { dependency, effect, effected, error } from "../src";
-import type { Effected } from "../src/effected";
+import { Effected } from "../src/effected";
 import type {
   Effect,
   EffectFactory,
@@ -181,6 +181,106 @@ describe("effected", () => {
     );
     expect<InferEffect<typeof program3>>().to(equal<Effect<"now", [], Date>>);
     expect<InferEffect<typeof program4>>().to(beNever);
+  });
+});
+
+describe("Effected.all(Seq)", () => {
+  const log = effect("log")<[message: string], void>;
+  const fetch = effect("fetch")<[url: string], string>;
+
+  it("should infer the return type of array of effects", () => {
+    const program1 = Effected.all([Effected.of(1), Effected.of(2), Effected.of(3)]);
+    expect(program1.runSync()).to(equal<[number, number, number]>);
+
+    const program2 = Effected.all([
+      effected(function* () {
+        yield* log("first");
+        return 1;
+      }),
+      effected(function* () {
+        yield* log("second");
+        return 2;
+      }),
+      Effected.of(3),
+    ]);
+    expect(program2.resume("log", () => {}).runSync()).to(equal<[number, number, number]>);
+  });
+
+  it("should infer the return type of non-array iterable of effects", () => {
+    const set = new Set<Effected<never, number>>();
+    const program1 = Effected.all(set);
+    expect(program1.runSync()).to(equal<number[]>);
+
+    // Custom iterable
+    const customIterable = {
+      *[Symbol.iterator]() {
+        yield Effected.of(42);
+        yield Effected.of("foo");
+        yield Effected.of("bar");
+      },
+    };
+    const program2 = Effected.all(customIterable);
+    expect(program2.runSync()).to(equal<(number | string)[]>);
+  });
+
+  it("should infer the return type of object (record) of effects", () => {
+    const program1 = Effected.all({
+      a: Effected.of(1),
+      b: Effected.of(2),
+      c: Effected.of(3),
+    });
+    expect(program1.runSync()).to(equal<{ a: number; b: number; c: number }>);
+
+    const program2 = Effected.all({
+      a: effected(function* () {
+        yield* log("processing a");
+        return 1;
+      }),
+      b: effected(function* () {
+        yield* log("processing b");
+        return 2;
+      }),
+      c: Effected.of("foobar"),
+    });
+    expect(program2.resume("log", () => {}).runSync()).to(
+      equal<{ a: number; b: number; c: string }>,
+    );
+  });
+
+  it("should handle complex nested scenarios", async () => {
+    const fetchData = (url: string) =>
+      effected(function* () {
+        const data = yield* fetch(url);
+        yield* log(`Fetched ${data} from ${url}`);
+        return data;
+      });
+
+    const urls = ["api/users", "api/posts", "api/comments"] as const;
+
+    // Combination of array and object
+    const program = Effected.all({
+      users: fetchData(urls[0]),
+      posts: fetchData(urls[1]),
+      metadata: Effected.allSeq([Effected.of("v1.0"), fetchData(urls[2])]),
+    });
+
+    const result = await program
+      .resume("fetch", (url) => `data from ${url}`)
+      .resume("log", () => {})
+      .runAsync();
+
+    expect(result).to(
+      equal<{
+        users: string;
+        posts: string;
+        metadata: [string, string];
+      }>,
+    );
+  });
+
+  it("should infer the return type of empty arrays/objects", () => {
+    expect(Effected.all([])).to(equal<Effected<never, []>>);
+    expect(Effected.all({})).to(equal<Effected<never, {}>>);
   });
 });
 

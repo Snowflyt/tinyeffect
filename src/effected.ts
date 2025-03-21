@@ -252,6 +252,230 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Combine multiple effected programs into one, running them in parallel and produces a tuple or
+   * object with the results.
+   * @param effects An iterable of effected programs or an object with effected programs as values.
+   * @returns
+   *
+   * @see {@linkcode Effected.allSeq} for the sequential version.
+   *
+   * @since 0.3.2
+   */
+  static all<const ES extends Iterable<Effected<Effect, unknown>>>(
+    effects: ES,
+  ): Effected<
+    ES extends Iterable<infer E> ?
+      [E] extends [never] ? never
+      : [E] extends [Effected<infer E, unknown>] ? E
+      : never
+    : never,
+    ES extends readonly unknown[] ?
+      { -readonly [K in keyof ES]: ES[K] extends Effected<Effect, infer R> ? R : never }
+    : ES extends Iterable<infer E> ?
+      [E] extends [Effected<Effect, infer R>] ?
+        R[]
+      : never
+    : never
+  >;
+  static all<const O extends Record<string, Effected<Effect, unknown>>>(
+    effects: O,
+  ): Effected<
+    O[keyof O] extends infer E ?
+      [E] extends [never] ? never
+      : [E] extends [Effected<infer E, unknown>] ? E
+      : never
+    : never,
+    { -readonly [K in keyof O]: O[K] extends Effected<Effect, infer R> ? R : never }
+  >;
+  static all(
+    effects: Iterable<Effected<Effect, unknown>> | Record<string, Effected<Effect, unknown>>,
+  ): Effected<Effect, unknown> {
+    return effected(() => {
+      const isIterable = Symbol.iterator in effects;
+      const keys: (string | number)[] = [];
+      const iterators: Iterator<Effect, unknown, unknown>[] = [];
+      if (isIterable) {
+        for (const e of effects) iterators.push(e[Symbol.iterator]());
+        Array.prototype.push.apply(
+          keys,
+          Array.from({ length: iterators.length }, (_, i) => i),
+        );
+      } else {
+        for (const key in effects) {
+          if (!Object.prototype.hasOwnProperty.call(effects, key)) continue;
+          keys.push(key);
+          iterators.push(effects[key]![Symbol.iterator]());
+        }
+      }
+
+      if (keys.length === 0) return { next: () => ({ done: true, value: isIterable ? [] : {} }) };
+
+      const label = Symbol(keys.length === 2 ? "inner" : "outer");
+
+      const results: any = isIterable ? new Array(keys.length) : {};
+      const states = Array.from(
+        { length: keys.length },
+        () => "idle" as "idle" | "pending" | "done",
+      );
+      let recover: ((payload: { _effectRecover: symbol; index: number }) => void) | null = null;
+
+      let index = 0;
+      const nextIdleIndex = () => {
+        let i = index;
+        do i = (i + 1) % keys.length;
+        while (states[i] !== "idle" && i !== index);
+        return i === index ? null : i;
+      };
+
+      return {
+        next: (...args: [] | [unknown]) => {
+          if (states.every((s) => s === "done")) return { done: true, value: results };
+
+          if (args[0] != null && (args[0] as any)._effectInterrupt === label) {
+            const currIndex = index;
+            states[currIndex] = "pending";
+            void ((args[0] as any).with as Promise<unknown>).then((value) => {
+              results[keys[currIndex]!] = value;
+              states[currIndex] = "idle";
+              recover!({ _effectRecover: label, index: currIndex });
+            });
+            const nextIndex = nextIdleIndex();
+
+            if (!nextIndex)
+              return {
+                done: false,
+                value: {
+                  _effectAsync: true,
+                  onComplete: (callback: NonNullable<typeof recover>) => {
+                    recover = callback;
+                  },
+                } as never,
+              };
+
+            index = nextIndex;
+            args = [results[keys[index]!]];
+          }
+
+          if (args[0] != null && (args[0] as any)._effectRecover === label) {
+            index = (args[0] as any).index;
+            args = [results[keys[index]!]];
+          }
+
+          let iterator = iterators[index]!;
+          let result = iterator.next(...args);
+
+          while (result.done) {
+            states[index] = "done";
+            results[keys[index]!] = result.value;
+            if (states.every((s) => s === "done")) {
+              return { done: true, value: results };
+            } else {
+              const nextIndex = nextIdleIndex();
+              if (!nextIndex)
+                return {
+                  done: false,
+                  value: {
+                    _effectAsync: true,
+                    onComplete: (callback: NonNullable<typeof recover>) => {
+                      recover = callback;
+                    },
+                  } as never,
+                };
+              index = nextIndex;
+              args = [results[keys[index]!]];
+              iterator = iterators[index]!;
+              result = iterator.next(...args);
+            }
+          }
+
+          if (
+            (result.value instanceof Effect || (result.value as any)._effectAsync) &&
+            !("interruptable" in (result.value as any))
+          )
+            (result.value as any).interruptable = label;
+
+          return result;
+        },
+      };
+    });
+  }
+
+  /**
+   * Combine multiple effected programs into one, running them sequentially and produces a tuple or
+   * object with the results.
+   * @param effects An iterable of effected programs or an object with effected programs as values.
+   * @returns
+   *
+   * @see {@linkcode Effected.all} for the parallel version.
+   *
+   * @since 0.3.2
+   */
+  static allSeq<const ES extends Iterable<Effected<Effect, unknown>>>(
+    effects: ES,
+  ): Effected<
+    ES extends Iterable<infer E> ?
+      [E] extends [never] ? never
+      : [E] extends [Effected<infer E, unknown>] ? E
+      : never
+    : never,
+    ES extends readonly unknown[] ?
+      { -readonly [K in keyof ES]: ES[K] extends Effected<Effect, infer R> ? R : never }
+    : ES extends Iterable<infer E> ?
+      [E] extends [Effected<Effect, infer R>] ?
+        R[]
+      : never
+    : never
+  >;
+  static allSeq<const O extends Record<string, Effected<Effect, unknown>>>(
+    effects: O,
+  ): Effected<
+    O[keyof O] extends infer E ?
+      [E] extends [never] ? never
+      : E extends Effected<infer E, unknown> ? E
+      : never
+    : never,
+    { -readonly [K in keyof O]: O[K] extends Effected<Effect, infer R> ? R : never }
+  >;
+  static allSeq(
+    effects: Iterable<Effected<Effect, unknown>> | Record<string, Effected<Effect, unknown>>,
+  ): Effected<Effect, unknown> {
+    return effected(() => {
+      const isIterable = Symbol.iterator in effects;
+      const keys: (string | number)[] = [];
+      const iterators: Iterator<Effect, unknown, unknown>[] = [];
+      if (isIterable) {
+        for (const e of effects) iterators.push(e[Symbol.iterator]());
+        Array.prototype.push.apply(
+          keys,
+          Array.from({ length: iterators.length }, (_, i) => i),
+        );
+      } else {
+        for (const key in effects) {
+          if (!Object.prototype.hasOwnProperty.call(effects, key)) continue;
+          keys.push(key);
+          iterators.push(effects[key]![Symbol.iterator]());
+        }
+      }
+      const results: any = isIterable ? new Array(keys.length) : {};
+      let index = 0;
+
+      return {
+        next: (...args: [] | [unknown]) => {
+          while (index < keys.length) {
+            const key = keys[index]!;
+            const iterator = iterators[index]!;
+            const result = iterator.next(...args);
+            if (!result.done) return result;
+            results[key] = result.value;
+            index++;
+          }
+          return { done: true, value: results };
+        },
+      };
+    });
+  }
+
+  /**
    * Handle an effect with a handler.
    *
    * For more common use cases, see {@link resume} and {@link terminate}, which provide a more
@@ -404,12 +628,15 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
                   : {}),
                 };
               // For asynchronous effects
-              return {
+              const handledEffect: ReturnType<typeof constructHandledEffect> = {
                 _effectAsync: true,
                 onComplete: (callback) => {
                   onComplete = callback;
                 },
               };
+              if ((effect as any).interruptable)
+                (handledEffect as any).interruptable = (effect as any).interruptable;
+              return handledEffect;
             };
 
             const handlerResult = handler(
@@ -1157,9 +1384,21 @@ export function runAsync<E extends Effected<Effect, unknown>>(
           continue;
         }
         if (value._effectAsync) {
-          // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-          value.onComplete(iterate, (...args: unknown[]) => reject(...args.slice(0, 1)));
-          return;
+          if (value.interruptable) {
+            let resolve!: (value: unknown) => void;
+            const promise = new Promise((_resolve) => (resolve = _resolve));
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+            value.onComplete(resolve, (...args: unknown[]) => reject(...args.slice(0, 1)));
+            ({ done, value } = iterator.next({
+              _effectInterrupt: value.interruptable,
+              with: promise,
+            }));
+            continue;
+          } else {
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+            value.onComplete(iterate, (...args: unknown[]) => reject(...args.slice(0, 1)));
+            return;
+          }
         }
         if (value instanceof Effect) {
           reject(new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`));

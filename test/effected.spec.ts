@@ -620,6 +620,684 @@ describe("effected", () => {
   });
 });
 
+describe("Effected.all", () => {
+  const delay = effect("delay")<[ms: number, label: string], string>;
+
+  it("should run effects in parallel rather than sequentially", async () => {
+    const executeOrder: string[] = [];
+    const startTime = Date.now();
+
+    // Create three effects with different delays
+    const effect1 = effected(function* () {
+      const result = yield* delay(100, "effect1");
+      return result;
+    });
+
+    const effect2 = effected(function* () {
+      const result = yield* delay(50, "effect2");
+      return result;
+    });
+
+    const effect3 = effected(function* () {
+      const result = yield* delay(75, "effect3");
+      return result;
+    });
+
+    // Run them in parallel
+    const parallelResult = await Effected.all([effect1, effect2, effect3])
+      .handle("delay", ({ resume }, ms, label) => {
+        executeOrder.push(`${label} start`);
+        setTimeout(() => {
+          executeOrder.push(`${label} end`);
+          resume(label);
+        }, ms);
+      })
+      .runAsync();
+
+    const parallelTime = Date.now() - startTime;
+
+    // Clear execution order and restart timer
+    executeOrder.length = 0;
+    const seqStartTime = Date.now();
+
+    // Run the same effects in sequence
+    const sequentialResult = await Effected.allSeq([effect1, effect2, effect3])
+      .handle("delay", ({ resume }, ms, label) => {
+        executeOrder.push(`${label} start`);
+        setTimeout(() => {
+          executeOrder.push(`${label} end`);
+          resume(label);
+        }, ms);
+      })
+      .runAsync();
+
+    const sequentialTime = Date.now() - seqStartTime;
+
+    // Check results are the same
+    expect(parallelResult).toEqual(sequentialResult);
+
+    // Verify parallel behavior
+    // 1. Time check: parallel should be closer to max time than sum time
+    const sumTime = 100 + 50 + 75; // 225ms
+
+    // Parallel time should be closer to maxTime (with some tolerance)
+    expect(parallelTime).toBeLessThan(sumTime * 0.7); // Less than 70% of sequential time
+
+    // Sequential time should be close to sumTime
+    expect(sequentialTime).toBeGreaterThanOrEqual(sumTime * 0.9); // At least 90% of expected sum
+
+    // 2. Execution order check for sequential
+    // In sequential execution, each effect should complete before the next starts
+    expect(executeOrder).toEqual([
+      "effect1 start",
+      "effect1 end",
+      "effect2 start",
+      "effect2 end",
+      "effect3 start",
+      "effect3 end",
+    ]);
+  });
+
+  it("should handle concurrent async effects with dependencies", async () => {
+    vi.useFakeTimers();
+    const timeline: string[] = [];
+
+    const processData = effect("processData")<[id: string, delay: number], string>;
+    const log = effect("log")<[message: string], void>;
+
+    // Create an effected program that processes multiple items
+    const processItem = (id: string, delayTime: number) =>
+      effected(function* () {
+        yield* log(`Starting ${id}`);
+        const result = yield* processData(id, delayTime);
+        yield* log(`Finished ${id}`);
+        return result;
+      });
+
+    // Set up the test case
+    const program = Effected.all({
+      item1: processItem("item1", 100),
+      item2: processItem("item2", 50),
+      item3: processItem("item3", 150),
+    })
+      .handle("processData", ({ resume }, id, delay) => {
+        timeline.push(`${id} processing started at ${Date.now()}`);
+        setTimeout(() => {
+          timeline.push(`${id} processing completed at ${Date.now()}`);
+          resume(`Processed ${id}`);
+        }, delay);
+      })
+      .resume("log", (message) => {
+        timeline.push(`Log: ${message} at ${Date.now()}`);
+      });
+
+    // Create a promise that will resolve when the program completes
+    const resultPromise = program.runAsync();
+
+    // Fast-forward time and await the result
+    vi.advanceTimersByTime(10); // Start all processes
+    expect(timeline.length).toBeGreaterThan(3); // Should have started all items
+
+    vi.advanceTimersByTime(50); // item2 should complete
+    expect(timeline.some((entry) => entry.includes("item2 processing completed"))).toBe(true);
+    expect(timeline.some((entry) => entry.includes("item1 processing completed"))).toBe(false);
+
+    vi.advanceTimersByTime(50); // item1 should complete
+    expect(timeline.some((entry) => entry.includes("item1 processing completed"))).toBe(true);
+
+    vi.advanceTimersByTime(50); // item3 should complete and program should finish
+
+    const result = await resultPromise;
+    expect(result).toEqual({
+      item1: "Processed item1",
+      item2: "Processed item2",
+      item3: "Processed item3",
+    });
+
+    // Verify that the items were indeed processed in parallel
+    // by checking timeline order - we should see items started
+    // before earlier ones completed
+    const item2Started = timeline.findIndex((e) => e.includes("item2 processing started"));
+    const item3Started = timeline.findIndex((e) => e.includes("item3 processing started"));
+    const item1Completed = timeline.findIndex((e) => e.includes("item1 processing completed"));
+
+    // Item2 and item3 should have started before item1 completed
+    expect(item2Started).toBeLessThan(item1Completed);
+    expect(item3Started).toBeLessThan(item1Completed);
+
+    vi.useRealTimers();
+  });
+
+  it("should correctly handle purely synchronous effects", () => {
+    const add = effect("add")<[a: number, b: number], number>;
+    const multiply = effect("multiply")<[a: number, b: number], number>;
+    const operations: string[] = [];
+
+    // Create three programs with only synchronous effects
+    const calc1 = effected(function* () {
+      operations.push("calc1 start");
+      const result = yield* add(10, 5);
+      operations.push("calc1 end");
+      return result;
+    });
+
+    const calc2 = effected(function* () {
+      operations.push("calc2 start");
+      const result = yield* multiply(6, 7);
+      operations.push("calc2 end");
+      return result;
+    });
+
+    const calc3 = effected(function* () {
+      operations.push("calc3 start");
+      const sum = yield* add(8, 8);
+      const product = yield* multiply(sum, 2);
+      operations.push("calc3 end");
+      return product;
+    });
+
+    // Execute in parallel
+    const result = Effected.all([calc1, calc2, calc3])
+      .resume("add", (a, b) => a + b)
+      .resume("multiply", (a, b) => a * b)
+      .runSync();
+
+    expect(result).toEqual([15, 42, 32]);
+
+    // Even with synchronous effects, we should see some operations interleaving
+    expect(operations.length).toBe(6);
+
+    // Clear operations and compare with sequential execution
+    operations.length = 0;
+    const seqResult = Effected.allSeq([calc1, calc2, calc3])
+      .resume("add", (a, b) => a + b)
+      .resume("multiply", (a, b) => a * b)
+      .runSync();
+
+    expect(seqResult).toEqual(result);
+    // Sequential execution should show a clear ordering pattern
+    expect(operations).toEqual([
+      "calc1 start",
+      "calc1 end",
+      "calc2 start",
+      "calc2 end",
+      "calc3 start",
+      "calc3 end",
+    ]);
+  });
+
+  it("should handle mixed synchronous and asynchronous effects", async () => {
+    const add = effect("add")<[a: number, b: number], number>;
+    const asyncMultiply = effect("asyncMultiply")<[a: number, b: number], number>;
+    const operations: string[] = [];
+    const startTime = Date.now();
+
+    // Synchronous effect
+    const syncCalc = effected(function* () {
+      operations.push(`syncCalc started at ${Date.now() - startTime}ms`);
+      const result = yield* add(10, 15);
+      operations.push(`syncCalc completed at ${Date.now() - startTime}ms`);
+      return result;
+    });
+
+    // Fast async effect
+    const fastAsync = effected(function* () {
+      operations.push(`fastAsync started at ${Date.now() - startTime}ms`);
+      const result = yield* asyncMultiply(5, 5);
+      operations.push(`fastAsync completed at ${Date.now() - startTime}ms`);
+      return result;
+    });
+
+    // Slow async effect
+    const slowAsync = effected(function* () {
+      operations.push(`slowAsync started at ${Date.now() - startTime}ms`);
+      const result = yield* asyncMultiply(7, 7);
+      operations.push(`slowAsync completed at ${Date.now() - startTime}ms`);
+      return result;
+    });
+
+    // Mixed effect (both sync and async)
+    const mixedCalc = effected(function* () {
+      operations.push(`mixedCalc started at ${Date.now() - startTime}ms`);
+      const syncResult = yield* add(3, 4);
+      const asyncResult = yield* asyncMultiply(syncResult, 2);
+      operations.push(`mixedCalc completed at ${Date.now() - startTime}ms`);
+      return asyncResult;
+    });
+
+    // Run all effects in parallel
+    const result = await Effected.all([syncCalc, fastAsync, slowAsync, mixedCalc])
+      .resume("add", (a, b) => a + b)
+      .handle("asyncMultiply", ({ resume }, a, b) => {
+        const delay = a === 7 ? 100 : 30; // slowAsync gets longer delay
+        setTimeout(() => {
+          resume(a * b);
+        }, delay);
+      })
+      .runAsync();
+
+    expect(result).toEqual([25, 25, 49, 14]);
+
+    // Verify true parallel execution:
+    // 1. Synchronous effects should complete almost immediately
+    // 2. Fast async effects should complete quickly
+    // 3. Slow async effects should complete last
+    // 4. Mixed effects should wait for their async portions
+
+    // Check timing through timestamps
+    const startEvents = operations.filter((op) => op.includes("started"));
+    const completeEvents = operations.filter((op) => op.includes("completed"));
+
+    // All effects should start at nearly the same time
+    expect(startEvents.length).toBe(4);
+
+    // syncCalc should complete quickly
+    const syncCompleteTime = parseInt(
+      /completed at (\d+)ms/.exec(completeEvents.find((e) => e.includes("syncCalc"))!)![1]!,
+    );
+
+    // slowAsync should complete last
+    const slowCompleteTime = parseInt(
+      /completed at (\d+)ms/.exec(completeEvents.find((e) => e.includes("slowAsync"))!)![1]!,
+    );
+
+    // The slow async effect should complete much later than sync effects
+    expect(slowCompleteTime).toBeGreaterThan(syncCompleteTime + 50);
+  });
+
+  it("should correctly propagate unhandled effects", async () => {
+    const handled = effect("handled")<[value: number], number>;
+    const unhandled = effect("unhandled")<[value: string], string>;
+
+    // Program with only handled effects
+    const program1 = effected(function* () {
+      return yield* handled(10);
+    });
+
+    // Program with unhandled effects
+    const program2 = effected(function* () {
+      return yield* unhandled("test");
+    });
+
+    // Program with both handled and unhandled effects
+    const program3 = effected(function* () {
+      const num = yield* handled(5);
+      // The unhandled effect here should cause the test to fail
+      return yield* unhandled(num.toString());
+    });
+
+    // Test single unhandled effect
+    const test1 = Effected.all([program1, program2]).resume("handled", (value) => value * 2);
+
+    await expect(test1.runAsyncUnsafe()).rejects.toThrow(UnhandledEffectError);
+    await expect(test1.runAsyncUnsafe()).rejects.toThrow(/unhandled/);
+
+    // Test nested unhandled effect
+    const test2 = Effected.all([program1, program3]).resume("handled", (value) => value * 2);
+
+    await expect(test2.runAsyncUnsafe()).rejects.toThrow(UnhandledEffectError);
+    await expect(test2.runAsyncUnsafe()).rejects.toThrow(/unhandled/);
+
+    // Ensure that one unhandled effect causes the whole execution to fail
+    let handledExecuted = false;
+    const test3 = Effected.all([program1, program2]).resume("handled", (value) => {
+      handledExecuted = true;
+      return value * 2;
+    });
+
+    await expect(test3.runAsyncUnsafe()).rejects.toThrow(UnhandledEffectError);
+    // program1 should still have executed
+    expect(handledExecuted).toBe(true);
+  });
+
+  it("should handle nested Effected.all calls with parallel execution", async () => {
+    const compute = effect("compute")<[id: string, delay: number], number>;
+    const timeline: string[] = [];
+    const startTime = Date.now();
+
+    // Create some basic effects with different delays
+    const slow = (id: string, delay: number) =>
+      effected(function* () {
+        const result = yield* compute(id, delay);
+        return result;
+      });
+
+    // Create nested structure:
+    // outer = [
+    //   effect1,
+    //   [nested1, nested2, nested3], <- inner Effected.all
+    //   effect2
+    // ]
+    const effect1 = slow("effect1", 70);
+    const effect2 = slow("effect2", 50);
+
+    const nested1 = slow("nested1", 40);
+    const nested2 = slow("nested2", 60);
+    const nested3 = slow("nested3", 30);
+
+    // Use Effected.all for the inner group
+    const innerGroup = Effected.all([nested1, nested2, nested3]);
+
+    // Use Effected.all for the outer group
+    const outerProgram = Effected.all([effect1, innerGroup, effect2]);
+
+    // Run with handlers
+    const result = await outerProgram
+      .handle("compute", ({ resume }, id, delay) => {
+        timeline.push(`${id} started at ${Date.now() - startTime}ms`);
+        setTimeout(() => {
+          timeline.push(`${id} completed at ${Date.now() - startTime}ms`);
+          resume(delay);
+        }, delay);
+      })
+      .runAsync();
+
+    const totalTime = Date.now() - startTime;
+
+    // Verify results structure: [effect1Result, [nested1Result, nested2Result, nested3Result], effect2Result]
+    expect(result[0]).toBe(70); // effect1 result
+    expect(Array.isArray(result[1])).toBe(true); // nested results should be an array
+    expect(result[1]).toEqual([40, 60, 30]); // nested results
+    expect(result[2]).toBe(50); // effect2 result
+
+    // Verify true parallel execution by time analysis
+    // Max time should be close to the longest task (effect1 = 70ms)
+    expect(totalTime).toBeLessThan(100); // Allow some overhead
+
+    // Check that all tasks started around the same time
+    const startTimes = timeline
+      .filter((entry) => entry.includes("started"))
+      .map((entry) => parseInt(/at (\d+)ms/.exec(entry)![1]!));
+
+    // All tasks should start within a small window
+    const maxStartDiff = Math.max(...startTimes) - Math.min(...startTimes);
+    expect(maxStartDiff).toBeLessThan(20); // Should be quite close together
+
+    // Verify that inner nested calls complete in parallel with outer calls
+    const completionOrder = timeline
+      .filter((entry) => entry.includes("completed"))
+      .map((entry) => entry.split(" ")[0]); // Extract just the ID
+
+    // nested3 (30ms) should complete before effect2 (50ms)
+    const nested3CompletedIndex = completionOrder.indexOf("nested3");
+    const effect2CompletedIndex = completionOrder.indexOf("effect2");
+    expect(nested3CompletedIndex).toBeLessThan(effect2CompletedIndex);
+
+    // nested1 (40ms) should complete before effect1 (70ms)
+    const nested1CompletedIndex = completionOrder.indexOf("nested1");
+    const effect1CompletedIndex = completionOrder.indexOf("effect1");
+    expect(nested1CompletedIndex).toBeLessThan(effect1CompletedIndex);
+
+    // For comparison, run the same structure with allSeq
+    timeline.length = 0;
+    const seqStartTime = Date.now();
+
+    const innerGroupSeq = Effected.allSeq([nested1, nested2, nested3]);
+    const outerProgramSeq = Effected.allSeq([effect1, innerGroupSeq, effect2]);
+
+    const seqResult = await outerProgramSeq
+      .handle("compute", ({ resume }, id, delay) => {
+        timeline.push(`${id} started at ${Date.now() - seqStartTime}ms`);
+        setTimeout(() => {
+          timeline.push(`${id} completed at ${Date.now() - seqStartTime}ms`);
+          resume(delay);
+        }, delay);
+      })
+      .runAsync();
+
+    const seqTotalTime = Date.now() - seqStartTime;
+
+    // Sequential time should be approximately the sum of all delays
+    // effect1 + nested1 + nested2 + nested3 + effect2 = 70 + 40 + 60 + 30 + 50 = 250ms
+    expect(seqTotalTime).toBeGreaterThanOrEqual(230); // Allow some wiggle room
+
+    // Results should match regardless of execution strategy
+    expect(seqResult).toEqual(result);
+  });
+
+  it("should handle empty input correctly", () => {
+    expect(Effected.all([]).runSync()).toEqual([]);
+    expect(Effected.all({}).runSync()).toEqual({});
+  });
+});
+
+describe("Effected.allSeq", () => {
+  const log = effect("log")<[message: string], void>;
+  const someError = error("some");
+  const fetch = effect("fetch")<[url: string], string>;
+
+  it("should handle arrays of effected values", () => {
+    const program = Effected.allSeq([Effected.of(1), Effected.of(2), Effected.of(3)]);
+    expect(program.runSync()).toEqual([1, 2, 3]);
+  });
+
+  it("should handle arrays with effects", () => {
+    const logs: string[] = [];
+
+    const program = Effected.allSeq([
+      effected(function* () {
+        yield* log("first");
+        return 1;
+      }),
+      effected(function* () {
+        yield* log("second");
+        return 2;
+      }),
+      Effected.of(3),
+    ]);
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toEqual([1, 2, 3]);
+    expect(logs).toEqual(["first", "second"]);
+  });
+
+  it("should handle non-array iterables", () => {
+    const set = new Set<Effected<never, number>>();
+    set.add(Effected.of(1));
+    set.add(Effected.of(2));
+    set.add(Effected.of(3));
+
+    const program1 = Effected.allSeq(set);
+    expect(program1.runSync()).toEqual([1, 2, 3]);
+
+    // Custom iterable
+    const customIterable = {
+      *[Symbol.iterator]() {
+        yield Effected.of(42);
+        yield Effected.of("foo");
+        yield Effected.of("bar");
+      },
+    };
+
+    const program2 = Effected.allSeq(customIterable);
+    expect(program2.runSync()).toEqual([42, "foo", "bar"]);
+  });
+
+  it("should handle plain objects (records)", () => {
+    const program = Effected.allSeq({
+      a: Effected.of(1),
+      b: Effected.of(2),
+      c: Effected.of(3),
+    });
+
+    expect(program.runSync()).toEqual({ a: 1, b: 2, c: 3 });
+  });
+
+  it("should handle objects with effects", () => {
+    const logs: string[] = [];
+
+    const program = Effected.allSeq({
+      a: effected(function* () {
+        yield* log("processing a");
+        return 1;
+      }),
+      b: effected(function* () {
+        yield* log("processing b");
+        return 2;
+      }),
+      c: Effected.of("foobar"),
+    });
+
+    const result = program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(result).toEqual({ a: 1, b: 2, c: "foobar" });
+    expect(logs).toEqual(["processing a", "processing b"]);
+  });
+
+  it("should propagate errors from array items", () => {
+    const program = Effected.allSeq([
+      Effected.of(1),
+      effected(function* () {
+        yield* someError("Something went wrong");
+        return 2;
+      }),
+      Effected.of(3),
+    ]);
+
+    let error: string | undefined;
+    const result = program
+      .catch("some", (msg) => {
+        error = msg;
+        return [-1, -1, -1];
+      })
+      .runSync();
+
+    expect(error).toBe("Something went wrong");
+    expect(result).toEqual([-1, -1, -1]);
+  });
+
+  it("should propagate errors from object values", () => {
+    const program = Effected.allSeq({
+      a: Effected.of(1),
+      b: effected(function* () {
+        yield* someError("Failed in b");
+        return 2;
+      }),
+      c: Effected.of(3),
+    });
+
+    let error: string | undefined;
+    const result = program
+      .catch("some", (msg) => {
+        error = msg;
+        return { failed: true };
+      })
+      .runSync();
+
+    expect(error).toBe("Failed in b");
+    expect(result).toEqual({ failed: true });
+  });
+
+  it("should handle complex nested scenarios", async () => {
+    const fetchData = (url: string) =>
+      effected(function* () {
+        const data = yield* fetch(url);
+        yield* log(`Fetched ${data} from ${url}`);
+        return data;
+      });
+
+    const logs: string[] = [];
+    const urls = ["api/users", "api/posts", "api/comments"] as const;
+
+    // Combination of array and object
+    const program = Effected.allSeq({
+      users: fetchData(urls[0]),
+      posts: fetchData(urls[1]),
+      metadata: Effected.allSeq([Effected.of("v1.0"), fetchData(urls[2])]),
+    });
+
+    const result = await program
+      .resume("fetch", (url) => `data from ${url}`)
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runAsync();
+
+    expect(result).toEqual({
+      users: "data from api/users",
+      posts: "data from api/posts",
+      metadata: ["v1.0", "data from api/comments"],
+    });
+
+    expect(logs).toEqual([
+      "Fetched data from api/users from api/users",
+      "Fetched data from api/posts from api/posts",
+      "Fetched data from api/comments from api/comments",
+    ]);
+  });
+
+  it("should process array items in order", () => {
+    const order: number[] = [];
+
+    const program = Effected.allSeq([
+      effected(function* () {
+        yield* log("first");
+        order.push(1);
+        return "a";
+      }),
+      effected(function* () {
+        yield* log("second");
+        order.push(2);
+        return "b";
+      }),
+      effected(function* () {
+        yield* log("third");
+        order.push(3);
+        return "c";
+      }),
+    ]);
+
+    const logs: string[] = [];
+    program
+      .resume("log", (msg) => {
+        logs.push(msg);
+      })
+      .runSync();
+
+    expect(order).toEqual([1, 2, 3]);
+    expect(logs).toEqual(["first", "second", "third"]);
+  });
+
+  it("should process object values in key order", () => {
+    const order: string[] = [];
+
+    const program = Effected.allSeq({
+      b: effected(function* () {
+        order.push("b");
+        return 2;
+      }),
+      a: effected(function* () {
+        order.push("a");
+        return 1;
+      }),
+      c: effected(function* () {
+        order.push("c");
+        return 3;
+      }),
+    });
+
+    program.runSync();
+
+    // Object keys should be processed in the order they're enumerated by Object.keys
+    // which is usually insertion order for modern JS engines
+    expect(order).toEqual(["b", "a", "c"]);
+  });
+
+  it("should handle empty input correctly", () => {
+    expect(Effected.allSeq([]).runSync()).toEqual([]);
+    expect(Effected.allSeq({}).runSync()).toEqual({});
+  });
+});
+
 describe("Effected#as", () => {
   it("should replace the return value with a constant value", () => {
     const program = Effected.of(42).as("replaced");

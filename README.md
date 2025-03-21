@@ -1186,3 +1186,17 @@ Effected.of(42).as("Hello, world!").runSync(); // => "Hello, world!"
 // You can also use `.asVoid()` as a shortcut for `.as(undefined)`
 Effected.of(42).asVoid().runSync(); // => undefined
 ```
+
+We also provide an `Effected.all()` helper function to run multiple effected programs in parallel and return their results as an array. This is similar to `Promise.all()`, but it works with effects instead of promises. Here’s an example:
+
+```typescript
+Effected.all([Effected.of(1), Effected.of(2), Effected.of(3)]).runSync(); // => [1, 2, 3]
+```
+
+To run effect programs sequentially, use `Effected.allSeq()`:
+
+```typescript
+Effected.allSeq([Effected.of(1), Effected.of(2), Effected.of(3)]).runSync(); // => [1, 2, 3]
+```
+
+Note that when all effected programs are synchronous, `Effected.all()` and `Effected.allSeq()` behave identically.
