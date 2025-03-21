@@ -551,9 +551,8 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * @returns
    */
   andThen<S, F extends Effect = never>(
-    handler: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
+    handler: (value: R) => Generator<F, S, unknown> | Effected<F, S> | S,
   ): Effected<E | F, S>;
-  andThen<S>(handler: (value: R) => S): Effected<E, S>;
   andThen(handler: (value: R) => unknown): Effected<Effect, unknown> {
     return effected(() => {
       const iterator = this[Symbol.iterator]();
@@ -823,9 +822,8 @@ interface EffectedDraft<
   ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
 
   andThen<S, F extends Effect = never>(
-    handler: (value: R) => Generator<F, S, unknown> | Effected<F, S>,
+    handler: (value: R) => Generator<F, S, unknown> | Effected<F, S> | S,
   ): EffectedDraft<P, E | F, S>;
-  andThen<S>(handler: (value: R) => S): EffectedDraft<P, E, S>;
 
   tap<F extends Effect = never>(
     handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,
