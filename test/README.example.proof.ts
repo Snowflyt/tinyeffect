@@ -648,10 +648,317 @@ test("Abstracting handlers", () => {
   }
 });
 
-test("Effects without generators", () => {
-  expect(Effected.of(42)).not.to(triggerError);
-  expect(Effected.of(42)).to(equal<Effected<never, number>>);
+test("Parallel execution with `Effected.all`", () => {
+  {
+    const log = effect("log")<[msg: string], void>;
+    const httpGet = effect("httpGet")<[url: string], any>;
 
-  expect(Effected.from(() => 42)).not.to(triggerError);
-  expect(Effected.from(() => 42)).to(equal<Effected<never, number>>);
+    const fetchUserData = (userId: number) =>
+      effected(function* () {
+        yield* log(`Fetching user ${userId}`);
+        const data = yield* httpGet(`/api/users/${userId}`);
+        return data;
+      });
+
+    expect(Effected.allSeq([fetchUserData(1), fetchUserData(2), fetchUserData(3)])).to(
+      equal<
+        Effected<
+          Effect<"httpGet", [url: string], any> | Effect<"log", [msg: string], void>,
+          [any, any, any]
+        >
+      >,
+    );
+    expect(Effected.all([fetchUserData(1), fetchUserData(2), fetchUserData(3)])).to(
+      equal<
+        Effected<
+          Effect<"httpGet", [url: string], any> | Effect<"log", [msg: string], void>,
+          [any, any, any]
+        >
+      >,
+    );
+  }
+
+  {
+    const fetchUser = (userId: number): Effected<never, User> =>
+      Effected.of({ id: userId, name: "John Doe", role: "user" });
+    const fetchUserPosts = (_userId: number): Effected<never, any[]> => Effected.of([]);
+    const fetchUserSettings = (_userId: number): Effected<never, any> => Effected.of({});
+
+    expect(Effected.all([fetchUser(1), fetchUser(2), fetchUser(3)]).runAsync()).to(
+      equal<Promise<[User, User, User]>>,
+    );
+
+    expect(
+      Effected.all({
+        user: fetchUser(1),
+        posts: fetchUserPosts(1),
+        settings: fetchUserSettings(1),
+      }).runAsync(),
+    ).to(equal<Promise<{ user: User; posts: any[]; settings: any }>>);
+  }
+
+  {
+    const compute = effect("compute")<[label: string, delay: number], number>;
+    const calculate = effect("calculate")<[a: number, b: number], number>;
+
+    const program = effected(function* () {
+      const results = yield* Effected.all([
+        // Sync task
+        calculate(10, 5),
+        // Fast async task
+        compute("fast task", 50),
+        // Slow async task
+        compute("slow task", 150),
+      ]);
+      console.log("Results:", results);
+    })
+      .resume("calculate", (a, b) => a + b)
+      .handle("compute", ({ resume }, label, delay) => {
+        console.log(`Starting ${label}`);
+        setTimeout(() => {
+          console.log(`Completed ${label}`);
+          resume(delay);
+        }, delay);
+      });
+
+    expect(program).to(equal<Effected<never, void>>);
+  }
+});
+
+test("Effects without generators", () => {
+  {
+    const println = effect("println")<unknown[], void>;
+    const executeSQL = effect("executeSQL")<[sql: string, ...params: unknown[]], any>;
+    const askCurrentUser = dependency("currentUser")<User | null>;
+    const authenticationError = error("authentication");
+    const unauthorizedError = error("unauthorized");
+
+    const requiresAdmin = () =>
+      effected(function* () {
+        const currentUser = yield* askCurrentUser();
+        if (!currentUser) return yield* authenticationError();
+        if (currentUser.role !== "admin")
+          return yield* unauthorizedError(`User "${currentUser.name}" is not an admin`);
+      });
+
+    const createUser1 = (user: Omit<User, "id">) =>
+      requiresAdmin()
+        .andThen(() =>
+          executeSQL("INSERT INTO users (name) VALUES (?)", user.name).andThen(
+            (id) => ({ id, ...user }) as User,
+          ),
+        )
+        .tap((savedUser) => println("User created:", savedUser));
+
+    expect(createUser1).to(
+      equal<
+        (
+          user: Omit<User, "id">,
+        ) => Effected<
+          | Unresumable<Effect<"error:authentication", [message?: string], never>>
+          | Effect<"dependency:currentUser", [], User | null>
+          | Unresumable<Effect<"error:unauthorized", [message?: string], never>>
+          | Effect<"executeSQL", [sql: string, ...params: unknown[]], any>
+          | Effect<"println", unknown[], void>,
+          User
+        >
+      >,
+    );
+
+    const createUser2 = (user: Omit<User, "id">) =>
+      requiresAdmin()
+        .flatMap(() =>
+          executeSQL("INSERT INTO users (name) VALUES (?)", user.name).map(
+            (id) => ({ id, ...user }) as User,
+          ),
+        )
+        .tap((savedUser) => println("User created:", savedUser));
+
+    expect(createUser2).to(
+      equal<
+        (
+          user: Omit<User, "id">,
+        ) => Effected<
+          | Unresumable<Effect<"error:authentication", [message?: string], never>>
+          | Effect<"dependency:currentUser", [], User | null>
+          | Unresumable<Effect<"error:unauthorized", [message?: string], never>>
+          | Effect<"executeSQL", [sql: string, ...params: unknown[]], any>
+          | Effect<"println", unknown[], void>,
+          User
+        >
+      >,
+    );
+  }
+
+  {
+    const println = effect("println")<unknown[], void>;
+
+    const program1 = Effected.of("Hello, world!")
+      .tap((message) => println(message))
+      .andThen((message) => message.toUpperCase());
+
+    expect(program1).to(equal<Effected<Effect<"println", unknown[], void>, string>>);
+
+    const program2 = Effected.from(() => {
+      console.log("Computing value...");
+      // eslint-disable-next-line sonarjs/pseudo-random
+      return Math.random() * 100;
+    }).andThen((value) => println(`Random value: ${value}`));
+
+    expect(program2).to(equal<Effected<Effect<"println", unknown[], void>, void>>);
+  }
+
+  {
+    expect(Effected.of(42).as("Hello, world!")).to(equal<Effected<never, string>>);
+    expect(Effected.of(42).asVoid()).to(equal<Effected<never, void>>);
+  }
+});
+
+test("Pipeline Syntax V.S. Generator Syntax", () => {
+  {
+    const fetchUser = effect("fetchUser")<[userId: number], User | null>;
+    const fetchPosts = effect("fetchPosts")<[userId: number], any[]>;
+
+    const getUserPosts1 = (userId: number) =>
+      effected(function* () {
+        const user = yield* fetchUser(userId);
+        if (!user) return null;
+        return yield* fetchPosts(user.id);
+      });
+
+    expect(getUserPosts1).to(
+      equal<
+        (
+          userId: number,
+        ) => Effected<
+          | Effect<"fetchUser", [userId: number], User | null>
+          | Effect<"fetchPosts", [userId: number], any[]>,
+          any[] | null
+        >
+      >,
+    );
+
+    const getUserPosts2 = (userId: number) =>
+      fetchUser(userId).andThen((user) => {
+        if (!user) return null;
+        return fetchPosts(user.id);
+      });
+
+    expect(getUserPosts2).to(
+      equal<
+        (
+          userId: number,
+        ) => Effected<
+          | Effect<"fetchUser", [userId: number], User | null>
+          | Effect<"fetchPosts", [userId: number], any[]>,
+          any[] | null
+        >
+      >,
+    );
+  }
+
+  {
+    const logger = {
+      error: effect("logger:error")<unknown[], void>,
+    };
+    const readFile = effect("readFile")<[path: string], string>;
+    const parseError = error("parse");
+    const parseContent = (content: string) =>
+      effected(function* () {
+        try {
+          return JSON.parse(content);
+        } catch (e) {
+          return yield* parseError((e as any).message);
+        }
+      });
+
+    const processFile1 = (path: string) =>
+      effected(function* () {
+        const content = yield* readFile(path);
+        return yield* parseContent(content);
+      }).catchAll(function* (error, message) {
+        yield* logger.error(`[${error}Error] Error processing ${path}:`, message);
+        return null;
+      });
+
+    expect(processFile1).to(
+      equal<
+        (
+          path: string,
+        ) => Effected<
+          Effect<"readFile", [path: string], string> | Effect<"logger:error", unknown[], void>,
+          any
+        >
+      >,
+    );
+
+    const processFile2 = (path: string) =>
+      readFile(path)
+        .andThen((content) => parseContent(content))
+        .catchAll((error, message) =>
+          logger.error(`[${error}Error] Error processing ${path}:`, message).as(null),
+        );
+
+    expect(processFile2).to(
+      equal<
+        (
+          path: string,
+        ) => Effected<
+          Effect<"readFile", [path: string], string> | Effect<"logger:error", unknown[], void>,
+          any
+        >
+      >,
+    );
+  }
+
+  {
+    type Order = { id: number; items: any[] };
+    const askConfig = dependency("config")<{ apiUrl: string }>;
+    const askCurrentUser = dependency("currentUser")<User>;
+    const validateOrder = (_order: Order, _user: User) => Effected.of(true);
+    const saveOrder = (_order: Order, _apiUrl: string) => Effected.of<Order>({ id: 1, items: [] });
+    const sendNotification = (_email: string, _message: string) => Effected.of(true);
+
+    const submitOrder1 = (order: Order) =>
+      effected(function* () {
+        const [config, user] = yield* Effected.all([askConfig(), askCurrentUser()]);
+        yield* validateOrder(order, user);
+        const result = yield* saveOrder(order, config.apiUrl);
+        yield* sendNotification(user.name, "Order submitted");
+        return result;
+      });
+
+    expect(submitOrder1).to(
+      equal<
+        (
+          order: Order,
+        ) => Effected<
+          | Effect<"dependency:config", [], { apiUrl: string }>
+          | Effect<"dependency:currentUser", [], User>,
+          Order
+        >
+      >,
+    );
+
+    const submitOrder2 = (order: Order) =>
+      Effected.all([askConfig(), askCurrentUser()]).andThen(([config, user]) =>
+        validateOrder(order, user).andThen(() =>
+          saveOrder(order, config.apiUrl).tap(() =>
+            sendNotification(user.name, "Order submitted").asVoid(),
+          ),
+        ),
+      );
+
+    expect(submitOrder2).to(
+      equal<
+        (
+          order: Order,
+        ) => Effected<
+          | Effect<"dependency:config", [], { apiUrl: string }>
+          | Effect<"dependency:currentUser", [], User>,
+          Order
+        >
+      >,
+    );
+  }
 });

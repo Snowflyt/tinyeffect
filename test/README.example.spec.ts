@@ -1162,29 +1162,481 @@ test("Abstracting handlers", () => {
   }
 });
 
-test("Effects without generators", () => {
-  const fib1 = (n: number): Effected<never, number> =>
-    effected(function* () {
-      if (n <= 1) return n;
-      return (yield* fib1(n - 1)) + (yield* fib1(n - 2));
+test("Parallel execution with `Effected.all`", async () => {
+  // Test sequential vs parallel behavior
+  {
+    const log = effect("log")<[message: string], void>;
+    const httpGet = effect("httpGet")<[url: string], any>;
+
+    const fetchUserData = (userId: number) =>
+      effected(function* () {
+        yield* log(`Fetching user ${userId}`);
+        const data = yield* httpGet(`/api/users/${userId}`);
+        return data;
+      });
+
+    const sequentialFetch = Effected.allSeq([fetchUserData(1), fetchUserData(2), fetchUserData(3)]);
+
+    const parallelFetch = Effected.all([fetchUserData(1), fetchUserData(2), fetchUserData(3)]);
+
+    const logMessages: string[] = [];
+    const fetchTimes: Record<string, { start: number; end: number }> = {};
+    let currentTime = 0;
+
+    // Test sequential execution
+    const seqResult = await sequentialFetch
+      .resume("log", (message) => {
+        logMessages.push(message);
+      })
+      .handle("httpGet", ({ resume }, url) => {
+        const userId = url.split("/").pop();
+        const key = `seq-${userId}`;
+        fetchTimes[key] = { start: currentTime, end: 0 };
+
+        // Simulate sequential execution with 100ms delay each
+        setTimeout(() => {
+          currentTime += 100;
+          fetchTimes[key]!.end = currentTime;
+          resume({ id: Number(userId), name: `User ${userId}` });
+        }, 100);
+      })
+      .runAsync();
+
+    expect(seqResult).toEqual([
+      { id: 1, name: "User 1" },
+      { id: 2, name: "User 2" },
+      { id: 3, name: "User 3" },
+    ]);
+    expect(logMessages).toEqual(["Fetching user 1", "Fetching user 2", "Fetching user 3"]);
+
+    // Clear state
+    logMessages.length = 0;
+    currentTime = 0;
+
+    // Test parallel execution
+    const parallelResult = await parallelFetch
+      .resume("log", (message) => {
+        logMessages.push(message);
+      })
+      .handle("httpGet", ({ resume }, url) => {
+        const userId = url.split("/").pop();
+        const key = `par-${userId}`;
+        fetchTimes[key] = { start: currentTime, end: 0 };
+
+        // All should start at the same time, but take different times to complete
+        const delay = Number(userId) * 50;
+        setTimeout(() => {
+          fetchTimes[key]!.end = currentTime + delay;
+          resume({ id: Number(userId), name: `User ${userId}` });
+        }, delay);
+      })
+      .runAsync();
+
+    expect(parallelResult).toEqual([
+      { id: 1, name: "User 1" },
+      { id: 2, name: "User 2" },
+      { id: 3, name: "User 3" },
+    ]);
+    expect(logMessages).toEqual(["Fetching user 1", "Fetching user 2", "Fetching user 3"]);
+  }
+
+  // Test object syntax example
+  {
+    const fetchUser = (userId: number) => Effected.of({ id: userId, name: `User ${userId}` });
+    const fetchUserPosts = (userId: number) =>
+      Effected.of([{ id: 1, title: `Post for ${userId}` }]);
+    const fetchUserSettings = (_userId: number) =>
+      Effected.of({ theme: "dark", notifications: true });
+
+    const userData = await Effected.all({
+      user: fetchUser(1),
+      posts: fetchUserPosts(1),
+      settings: fetchUserSettings(1),
+    }).runAsync();
+
+    expect(userData).toEqual({
+      user: { id: 1, name: "User 1" },
+      posts: [{ id: 1, title: "Post for 1" }],
+      settings: { theme: "dark", notifications: true },
     });
+  }
 
-  const fib2 = (n: number): Effected<never, number> => {
-    if (n <= 1) return Effected.of(n);
-    return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
+  // Test mixed sync and async effects
+  {
+    const compute = effect("compute")<[label: string, delay: number], number>;
+    const calculate = effect("calculate")<[a: number, b: number], number>;
+
+    const computeResults: string[] = [];
+
+    const mixedProgram = effected(function* () {
+      const results = yield* Effected.all([
+        // Sync task
+        calculate(10, 5),
+        // Fast async task
+        compute("fast task", 50),
+        // Slow async task
+        compute("slow task", 150),
+      ]);
+      return results;
+    })
+      .resume("calculate", (a, b) => a + b)
+      .handle("compute", ({ resume }, label, delay) => {
+        computeResults.push(`Starting ${label}`);
+        setTimeout(() => {
+          computeResults.push(`Completed ${label}`);
+          resume(delay);
+        }, delay);
+      });
+
+    const mixedResults = await mixedProgram.runAsync();
+    expect(mixedResults).toEqual([15, 50, 150]);
+    expect(computeResults).toEqual([
+      "Starting fast task",
+      "Starting slow task",
+      "Completed fast task",
+      "Completed slow task",
+    ]);
+  }
+});
+
+test("Effects without generators (Pipeline syntax)", () => {
+  {
+    const fib1 = (n: number): Effected<never, number> =>
+      effected(function* () {
+        if (n <= 1) return n;
+        return (yield* fib1(n - 1)) + (yield* fib1(n - 2));
+      });
+
+    const fib2 = (n: number): Effected<never, number> => {
+      if (n <= 1) return Effected.of(n);
+      return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
+    };
+
+    const fib3 = (n: number): Effected<never, number> => {
+      if (n <= 1) return Effected.from(() => n);
+      return fib3(n - 1).andThen((a) => fib3(n - 2).andThen((b) => a + b));
+    };
+
+    const fib4 = (n: number): Effected<never, number> => {
+      if (n <= 1) return Effected.of(n);
+      return fib4(n - 1).flatMap((a) => fib4(n - 2).map((b) => a + b));
+    };
+
+    expect(fib1(10).runSync()).toBe(55);
+    expect(fib2(10).runSync()).toBe(55);
+    expect(fib3(10).runSync()).toBe(55);
+  }
+
+  {
+    type User = { id: number; name: string; role: "admin" | "user" };
+
+    const println = effect("println")<unknown[], void>;
+    const executeSQL = effect("executeSQL")<[sql: string, ...params: unknown[]], any>;
+    const askCurrentUser = dependency("currentUser")<User | null>;
+    const authenticationError = error("authentication");
+    const unauthorizedError = error("unauthorized");
+
+    const requiresAdmin = () =>
+      effected(function* () {
+        const currentUser = yield* askCurrentUser();
+        if (!currentUser) return yield* authenticationError();
+        if (currentUser.role !== "admin")
+          return yield* unauthorizedError(`User "${currentUser.name}" is not an admin`);
+      });
+
+    const alice: Omit<User, "id"> = { name: "Alice", role: "user" };
+
+    const createUser = (user: Omit<User, "id">) =>
+      requiresAdmin()
+        .andThen(() =>
+          executeSQL("INSERT INTO users (name) VALUES (?)", user.name).andThen(
+            (id) => ({ id, ...user }) as User,
+          ),
+        )
+        .tap((savedUser) => println("User created:", savedUser));
+
+    const logs: unknown[][] = [];
+    let sqlExecuted = false;
+
+    // Test with admin user
+    const result = createUser(alice)
+      .resume("executeSQL", (sql, ...params) => {
+        expect(sql).toBe("INSERT INTO users (name) VALUES (?)");
+        expect(params[0]).toBe("Alice");
+        sqlExecuted = true;
+        return 42;
+      })
+      .resume("println", (...args) => {
+        logs.push(args);
+      })
+      .provide("currentUser", { id: 1, name: "Charlie", role: "admin" })
+      .catch("authentication", () => {
+        throw new Error("Should not hit this path");
+      })
+      .catch("unauthorized", () => {
+        throw new Error("Should not hit this path");
+      })
+      .runSync();
+
+    expect(sqlExecuted).toBe(true);
+    expect(logs).toEqual([["User created:", { id: 42, name: "Alice", role: "user" }]]);
+    expect(result).toEqual({ id: 42, name: "Alice", role: "user" });
+  }
+
+  // Test Effected.of and Effected.from examples
+  {
+    const println = effect("println")<[message: string], void>;
+
+    const printlnLogs: unknown[][] = [];
+
+    const program1 = Effected.of("Hello, world!")
+      .tap((message) => println(message))
+      .andThen((message) => message.toUpperCase());
+
+    const resultProgram1 = program1
+      .resume("println", (...args) => {
+        printlnLogs.push(args);
+      })
+      .runSync();
+
+    expect(printlnLogs).toEqual([["Hello, world!"]]);
+    expect(resultProgram1).toBe("HELLO, WORLD!");
+
+    // Test .as and .asVoid methods
+    expect(Effected.of(42).as("Hello, world!").runSync()).toBe("Hello, world!");
+    expect(Effected.of(42).asVoid().runSync()).toBe(undefined);
+  }
+});
+
+test("Pipeline Syntax VS Generator Syntax", async () => {
+  const fetchUser = effect("fetchUser")<[userId: number], { id: number; name: string } | null>;
+  const fetchPosts = effect("fetchPosts")<[userId: number], { id: number; title: string }[]>;
+  const readFile = effect("readFile")<[path: string], string>;
+  const parseContent = effect("parseContent")<[content: string], any>;
+  const logger = {
+    error: effect("logger.error")<unknown[], void>,
   };
 
-  const fib3 = (n: number): Effected<never, number> => {
-    if (n <= 1) return Effected.from(() => n);
-    return fib3(n - 1).andThen((a) => fib3(n - 2).andThen((b) => a + b));
-  };
+  // Test generator syntax vs pipeline syntax for getUserPosts
+  {
+    // Generator syntax
+    const getUserPostsGen = (userId: number) =>
+      effected(function* () {
+        const user = yield* fetchUser(userId);
+        if (!user) return null;
+        return yield* fetchPosts(user.id);
+      });
 
-  const fib4 = (n: number): Effected<never, number> => {
-    if (n <= 1) return Effected.of(n);
-    return fib4(n - 1).flatMap((a) => fib4(n - 2).map((b) => a + b));
-  };
+    // Pipeline syntax
+    const getUserPostsPipe = (userId: number) =>
+      fetchUser(userId).andThen((user) => {
+        if (!user) return null;
+        return fetchPosts(user.id);
+      });
 
-  expect(fib1(10).runSync()).toBe(55);
-  expect(fib2(10).runSync()).toBe(55);
-  expect(fib3(10).runSync()).toBe(55);
+    // Test getUserPosts - user exists
+    const userPostsGen = getUserPostsGen(1)
+      .resume("fetchUser", (userId) => {
+        expect(userId).toBe(1);
+        return { id: 1, name: "Test User" };
+      })
+      .resume("fetchPosts", (userId) => {
+        expect(userId).toBe(1);
+        return [{ id: 101, title: "Test Post" }];
+      })
+      .runSync();
+
+    expect(userPostsGen).toEqual([{ id: 101, title: "Test Post" }]);
+
+    const userPostsPipe = getUserPostsPipe(1)
+      .resume("fetchUser", (userId) => {
+        expect(userId).toBe(1);
+        return { id: 1, name: "Test User" };
+      })
+      .resume("fetchPosts", (userId) => {
+        expect(userId).toBe(1);
+        return [{ id: 101, title: "Test Post" }];
+      })
+      .runSync();
+
+    expect(userPostsPipe).toEqual([{ id: 101, title: "Test Post" }]);
+
+    // Test getUserPosts - user doesn't exist
+    const nullUserPostsGen = getUserPostsGen(999)
+      .resume("fetchUser", () => null)
+      .resume("fetchPosts", () => {
+        throw new Error("Should not be called");
+      })
+      .runSync();
+
+    expect(nullUserPostsGen).toBeNull();
+
+    const nullUserPostsPipe = getUserPostsPipe(999)
+      .resume("fetchUser", () => null)
+      .resume("fetchPosts", () => {
+        throw new Error("Should not be called");
+      })
+      .runSync();
+
+    expect(nullUserPostsPipe).toBeNull();
+  }
+
+  // Test error handling example
+  {
+    // Generator syntax
+    const processFileGen = (path: string) =>
+      effected(function* () {
+        const content = yield* readFile(path);
+        return yield* parseContent(content);
+      }).catchAll(function* (error: string, message) {
+        yield* logger.error(`[${error}Error] Error processing ${path}:`, message);
+        return null;
+      });
+
+    // Pipeline syntax
+    const processFilePipe = (path: string) =>
+      readFile(path)
+        .andThen((content) => parseContent(content))
+        .catchAll((error: string, message) =>
+          logger.error(`[${error}Error] Error processing ${path}:`, message).as(null),
+        );
+
+    // Test successful case
+    const errorLogs: string[][] = [];
+
+    const processResult = await processFileGen("config.json")
+      .resume("readFile", (path) => {
+        expect(path).toBe("config.json");
+        return '{"key": "value"}';
+      })
+      .resume("parseContent", (content) => {
+        expect(content).toBe('{"key": "value"}');
+        return { key: "value" };
+      })
+      .resume("logger.error", (...args) => {
+        errorLogs.push(args.map(String));
+      })
+      .runAsync();
+
+    expect(processResult).toEqual({ key: "value" });
+    expect(errorLogs).toEqual([]);
+
+    // Test error case
+    errorLogs.length = 0;
+    const errorEffect = error("parse");
+
+    const errorResult = await processFilePipe("bad.json")
+      .resume("readFile", () => "invalid-json")
+      .resume("parseContent", () => errorEffect("Invalid JSON format"))
+      .resume("logger.error", (...args) => {
+        errorLogs.push(args.map(String));
+      })
+      .catch("parse", () => {
+        errorLogs.push(["[parseError] Error processing bad.json: Invalid JSON format"]);
+        return null;
+      })
+      .runAsync();
+
+    expect(errorResult).toBeNull();
+    expect(errorLogs.length).toBe(1);
+    expect(errorLogs[0]![0]).toBe("[parseError] Error processing bad.json: Invalid JSON format");
+  }
+
+  {
+    type Order = { id: string; items: { id: string; quantity: number }[] };
+
+    // Define required effects
+    const askConfig = dependency("config")<{ apiUrl: string }>;
+    const askCurrentUser = dependency("currentUser")<{ id: number; email: string }>;
+    const validateOrder = effect("validateOrder")<[order: Order, user: { id: number }], void>;
+    const saveOrder = effect("saveOrder")<[order: Order, apiUrl: string], { orderId: string }>;
+    const sendNotification = effect("sendNotification")<[email: string, message: string], void>;
+
+    // Test order
+    const testOrder: Order = {
+      id: "order-123",
+      items: [{ id: "item-1", quantity: 2 }],
+    };
+
+    // Implementation with generator syntax
+    const submitOrderGen = (order: Order) =>
+      effected(function* () {
+        const [config, user] = yield* Effected.all([askConfig(), askCurrentUser()]);
+        yield* validateOrder(order, user);
+        const result = yield* saveOrder(order, config.apiUrl);
+        yield* sendNotification(user.email, "Order submitted");
+        return result;
+      });
+
+    // Implementation with pipeline syntax
+    const submitOrderPipe = (order: Order) =>
+      Effected.all([askConfig(), askCurrentUser()]).andThen(([config, user]) =>
+        validateOrder(order, user).andThen(() =>
+          saveOrder(order, config.apiUrl).tap(() =>
+            sendNotification(user.email, "Order submitted").asVoid(),
+          ),
+        ),
+      );
+
+    // Test configuration and user
+    const testConfig = { apiUrl: "https://api.example.com/orders" };
+    const testUser = { id: 42, email: "user@example.com" };
+    const orderResult = { orderId: "ORD-123456" };
+
+    // Track effect execution for verification
+    const executionLog: string[] = [];
+
+    // Test generator implementation
+    const genResult = await submitOrderGen(testOrder)
+      .provide("config", testConfig)
+      .provide("currentUser", testUser)
+      .resume("validateOrder", (order, user) => {
+        executionLog.push(`validateOrder: ${order.id}, userId: ${user.id}`);
+      })
+      .resume("saveOrder", (order, apiUrl) => {
+        executionLog.push(`saveOrder: ${order.id}, apiUrl: ${apiUrl}`);
+        return orderResult;
+      })
+      .resume("sendNotification", (email, message) => {
+        executionLog.push(`sendNotification: ${email}, message: ${message}`);
+      })
+      .runAsync();
+
+    // Verify generator implementation results
+    expect(genResult).toEqual(orderResult);
+    expect(executionLog).toEqual([
+      "validateOrder: order-123, userId: 42",
+      "saveOrder: order-123, apiUrl: https://api.example.com/orders",
+      "sendNotification: user@example.com, message: Order submitted",
+    ]);
+
+    // Clear logs and test pipeline implementation
+    executionLog.length = 0;
+
+    const pipeResult = await submitOrderPipe(testOrder)
+      .provide("config", testConfig)
+      .provide("currentUser", testUser)
+      .resume("validateOrder", (order, user) => {
+        executionLog.push(`validateOrder: ${order.id}, userId: ${user.id}`);
+      })
+      .resume("saveOrder", (order, apiUrl) => {
+        executionLog.push(`saveOrder: ${order.id}, apiUrl: ${apiUrl}`);
+        return orderResult;
+      })
+      .resume("sendNotification", (email, message) => {
+        executionLog.push(`sendNotification: ${email}, message: ${message}`);
+      })
+      .runAsync();
+
+    // Verify pipeline implementation results
+    expect(pipeResult).toEqual(orderResult);
+    expect(executionLog).toEqual([
+      "validateOrder: order-123, userId: 42",
+      "saveOrder: order-123, apiUrl: https://api.example.com/orders",
+      "sendNotification: user@example.com, message: Order submitted",
+    ]);
+
+    // Verify both implementations produce the same results
+    expect(pipeResult).toEqual(genResult);
+  }
 });

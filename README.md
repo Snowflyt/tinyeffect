@@ -1135,51 +1135,161 @@ const range = (start: number, stop: number) => range(start, stop).with(handleErr
 const range = (start: number, stop: number) => handleErrorAsResult(range(start, stop));
 ```
 
-### Effects without generators (Pipeline syntax)
+### Parallel execution with `Effected.all`
 
-The fundamental logic of tinyeffect is _not_ dependent on generators. An effected program (represented as an `Effected` instance) is essentially an iterable object that implements a `[Symbol.iterator](): Iterator<Effect>` method. Although using the `effected` helper function in conjunction with a generator allows you to write more imperative-style code with `yield*` to manage effects, this is not the only way to handle them.
+When working with asynchronous effects, you frequently need to combine multiple operations. While generator syntax excels at expressing sequential code, it doesn’t provide a native way to run effects in parallel using `yield*`. To address this, tinyeffect offers two complementary methods for handling multiple effected programs:
 
-In fact, `effected` can accept any function that returns an iterator of effects — specifically, any function that returns an object implementing a `.next()` method that outputs objects with `value` and `done` properties.
+- `Effected.all()`: Executes effected programs in parallel (concurrently)
+- `Effected.allSeq()`: Executes effected programs sequentially (one after another), equivalent to running them individually with `yield*`.
 
-It is not even necessary to use `effected` to construct an effected program. You can also create them using `Effected.of()` or `Effected.from()`. Here are two equivalent examples:
+It’s worth noting that when all effected programs are synchronous, `Effected.all()` and `Effected.allSeq()` produce identical results. The difference becomes significant when dealing with time-consuming operations:
 
 ```typescript
-const fib1 = (n: number): Effected<never, number> =>
+const fetchUserData = (userId: number) =>
   effected(function* () {
-    if (n <= 1) return n;
-    return (yield* fib1(n - 1)) + (yield* fib1(n - 2));
+    yield* log(`Fetching user ${userId}`);
+    const data = yield* httpGet(`/api/users/${userId}`);
+    return data;
   });
 
-const fib2 = (n: number): Effected<never, number> => {
-  if (n <= 1) return Effected.of(n);
-  // Or use `Effected.from` with a getter:
-  // if (n <= 1) return Effected.from(() => n);
-  return fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b));
-};
+// Sequential execution - total time is the sum of all operations
+const sequentialFetch = Effected.allSeq([fetchUserData(1), fetchUserData(2), fetchUserData(3)]); // Takes ~300ms if each fetch takes ~100ms
+
+// Parallel execution - total time is close to the slowest operation
+const parallelFetch = Effected.all([fetchUserData(1), fetchUserData(2), fetchUserData(3)]); // Takes ~100ms because all fetches run concurrently
 ```
 
-> [!NOTE]
->
-> The above example is purely for illustrative purposes and _should not_ be used in practice. While it demonstrates how effects can be handled, it mimics the behavior of a simple fib function with unnecessary complexity and overhead, which could greatly degrade performance.
+Both methods accept either an iterable of effected programs or an object with named effected programs:
 
-Understanding the definition of `fib2` may take some time, but it serves as an effective demonstration of working with effects without generators. The expression `fib2(n - 1).andThen((a) => fib2(n - 2).andThen((b) => a + b))` can be interpreted as follows: “After resolving `fib2(n - 1)`, assign the result to `a`, then resolve `fib2(n - 2)` and assign the result to `b`. Finally, return `a + b`.”
+```typescript
+// Iterable syntax - results will be an array
+const users = await Effected.all([fetchUser(1), fetchUser(2), fetchUser(3)]).runAsync();
+// users: [User, User, User]
+
+// Object syntax - results maintain property names
+const userData = await Effected.all({
+  user: fetchUser(userId),
+  posts: fetchUserPosts(userId),
+  settings: fetchUserSettings(userId),
+}).runAsync();
+// userData: { user: User, posts: Post[], settings: Settings }
+```
+
+You can mix synchronous and asynchronous effects, and `Effected.all` will handle them efficiently:
+
+```typescript
+const compute = effect("compute")<[label: string, delay: number], number>;
+const calculate = effect("calculate")<[a: number, b: number], number>;
+
+// Create a mix of sync and async tasks
+const program = effected(function* () {
+  const results = yield* Effected.all([
+    // Sync task
+    calculate(10, 5),
+    // Fast async task
+    compute("fast task", 50),
+    // Slow async task
+    compute("slow task", 150),
+  ]);
+  console.log("Results:", results);
+})
+  .resume("calculate", (a, b) => a + b)
+  .handle("compute", ({ resume }, label, delay) => {
+    console.log(`Starting ${label}`);
+    setTimeout(() => {
+      console.log(`Completed ${label}`);
+      resume(delay);
+    }, delay);
+  });
+
+// Results will be [15, 50, 150]
+// Total execution time will be ~150ms (the slowest task)
+```
+
+When should you choose sequential execution with `Effected.allSeq`? Consider using it when:
+
+1. Operations must happen in a specific order.
+2. Later operations depend on earlier ones.
+3. You need to limit resource usage by preventing concurrent operations.
+
+```typescript
+// Use sequential execution when operations must happen in order
+const processData = Effected.allSeq([
+  setupDatabase(),
+  migrateSchema(),
+  importData(),
+  validateData(),
+]);
+
+// The equivalent generator syntax
+const processData = effected(function* () {
+  yield* setupDatabase();
+  yield* migrateSchema();
+  yield* importData();
+  yield* validateData();
+});
+```
+
+For most other cases, it is recommended to use `Effected.all` over `Effected.allSeq`, since it is more efficient and easier to read.
+
+### Effects without generators (Pipeline syntax)
+
+The fundamental logic of tinyeffect is _not_ dependent on generators. An effected program (represented as an `Effected` instance) is essentially an iterable object that implements a `[Symbol.iterator](): Iterator<Effect>` method.
+
+Although using the `effected` helper function with generators allows you to write more imperative-style code using `yield*` to manage effects, this is not the only approach. tinyeffect offers an alternative pipeline-style API for transforming and combining effected programs. At the heart of this API is the `.andThen()` method, which serves as the primary way to transform and chain effected programs.
+
+While we've covered `.andThen()` in previous sections, we haven’t yet explored how it can be used in a more functional, pipeline-style manner. The `.andThen(handler)` method is quite versatile and can be used in several ways:
+
+While we have covered `.andThen()` in previous sections, we haven’t yet explored how it can be used in a more functional, pipeline-style manner. Actually, `.andThen(handler)` is quite versatile and can be used in a variety of ways:
+
+- Transform a result using a pure function.
+- Chain another effected program.
+- Work with generators that yield effects.
+
+Let’s rewrite the `createUser` example using the pipeline syntax:
+
+```typescript
+const createUser = (user: Omit<User, "id">) =>
+  requiresAdmin()
+    .andThen(() =>
+      executeSQL("INSERT INTO users (name) VALUES (?)", user.name)
+        .andThen((id) => ({ id, ...user } as User)),
+    )
+    .tap((savedUser) => println("User created:", savedUser));
+```
+
+A helpful way to understand this code is to think of `Effected` as a container for a delayed computation (or _monad_, if you come from a functional programming background). The `Effected` instance itself doesn’t perform any computation; it only represents a sequence of effects that will be executed when you call `.runSync()` or `.runAsync()`.
 
 You can compare `Effected` with `Promise` in JavaScript. Just like `Promise.prototype.then(handler)` allows you to chain multiple promises together, `Effected.prototype.andThen(handler)` allows you to chain multiple effected programs together. If a handler returns a generator or another effected program, it will be automatically flattened, similar to how `Promise.prototype.then()` works in JavaScript.
 
-Another way to think of `Effected` is as a container for a delayed computation (or _monad_, if you come from a functional programming background). The `Effected` instance itself doesn't perform any computation; it only represents a sequence of effects that will be executed when you call `.runSync()` or `.runAsync()`.
-
-Actually, tinyeffect provides two more methods, `.map()` and `.flatMap()`, which explicitly indicate whether you want to flatten the result or not. The `fib2` function can be rewritten using `flatMap/map` as follows:
+To create effects without generators, tinyeffect provides two foundational methods. `Effected.of(value)` creates an effected program that immediately resolves to the given value without performing any effects — similar to `Promise.resolve(value)`. `Effected.from(() => value)` allows you to execute a function lazily when the program is run. These are useful as starting points for pipeline-style code:
 
 ```typescript
-const fib2 = (n: number): Effected<never, number> => {
-  if (n <= 1) return Effected.of(n);
-  return fib2(n - 1).flatMap((a) => fib2(n - 2).map((b) => a + b));
-};
+// Create an effected program that resolves to "Hello, world!"
+const program1 = Effected.of("Hello, world!")
+  .tap((message) => println(message))
+  .andThen((message) => message.toUpperCase());
+
+// Create an effected program that executes the function when run
+const program2 = Effected.from(() => {
+  console.log("Computing value...");
+  return Math.random() * 100;
+}).andThen((value) => println(`Random value: ${value}`));
 ```
 
-While `andThen` is more concise and easier to read, `flatMap` and `map` provide more control over the result. However, it is not recommended to use `flatMap` and `map` instead of `andThen` directly in most cases, as they can make the code harder to read and understand, and provide very little improvement in performance.
+When you need more explicit control, tinyeffect offers `.map()` and `.flatMap()`. The `.map()` method transforms a result without introducing new effects, while `.flatMap()` expects the handler to return another effected program:
 
-There’s also an `.as(value)` method which is an alias for `.map(() => value)`. This can be useful when you want to return a constant value from an effect:
+```typescript
+const createUser = (user: Omit<User, "id">) =>
+  requiresAdmin()
+    .flatMap(() =>
+      executeSQL("INSERT INTO users (name) VALUES (?)", user.name)
+        .map((id) => ({ id, ...user } as User)),
+    )
+    .tap((savedUser) => println("User created:", savedUser));
+```
+
+For the common case of replacing a result with a constant value, use the `.as(value)` method as a shorthand for `.map(() => value)`:
 
 ```typescript
 Effected.of(42).as("Hello, world!").runSync(); // => "Hello, world!"
@@ -1187,16 +1297,91 @@ Effected.of(42).as("Hello, world!").runSync(); // => "Hello, world!"
 Effected.of(42).asVoid().runSync(); // => undefined
 ```
 
-We also provide an `Effected.all()` helper function to run multiple effected programs in parallel and return their results as an array. This is similar to `Promise.all()`, but it works with effects instead of promises. Here’s an example:
+In most cases, `.andThen()` is recommended over `.map()` and `.flatMap()` for its versatility and readability. A myth is that `.flatMap()/.map()` may provide better performance than `.andThen()` since they do not need to check if the handler returns a generator or another effected program. However, in practice, the performance difference is negligible, so it’s better to use `.andThen()` directly for simplicity and consistency.
+
+### Pipeline Syntax V.S. Generator Syntax
+
+Both pipeline syntax and generator syntax are valid approaches for working with effected programs in tinyeffect. Each approach has distinct advantages:
+
+**Generator Syntax:**
+
+- More familiar to developers used to imperative programming.
+- Natural handling of conditionals and loops.
+- Simpler debugging with sequential steps.
+
+**Pipeline Syntax:**
+
+- More functional approach with method chaining.
+- Reduces nesting for simple transformations.
+- Offers better performance in some cases.
+
+While pipeline syntax offers better performance for simple transformations, in reality such advantages are often negligible since IO-bound effects (like HTTP requests or file operations) usually dominate the execution time. Therefore, the choice between the two should primarily be based on readability and maintainability.
+
+Below are several examples where pipeline syntax might seem more straightforward:
 
 ```typescript
-Effected.all([Effected.of(1), Effected.of(2), Effected.of(3)]).runSync(); // => [1, 2, 3]
+// Generator syntax
+const getUserPosts = (userId: number) =>
+  effected(function* () {
+    const user = yield* fetchUser(userId);
+    if (!user) return null;
+    return yield* fetchPosts(user.id);
+  });
+
+// Pipeline syntax
+const getUserPosts = (userId: number) =>
+  fetchUser(userId).andThen((user) => {
+    if (!user) return null;
+    return fetchPosts(user.id);
+  });
 ```
 
-To run effect programs sequentially, use `Effected.allSeq()`:
+Another example for error handling:
 
 ```typescript
-Effected.allSeq([Effected.of(1), Effected.of(2), Effected.of(3)]).runSync(); // => [1, 2, 3]
+// Generator syntax
+const processFile = (path: string) =>
+  effected(function* () {
+    const content = yield* readFile(path);
+    return yield* parseContent(content);
+  }).catchAll(function* (error, message) {
+    yield* logger.error(`[${error}Error] Error processing ${path}:`, message);
+    return null;
+  });
+
+// Pipeline syntax
+const processFile = (path: string) =>
+  readFile(path)
+    .andThen((content) => parseContent(content))
+    .catchAll((error, message) =>
+      logger.error(`[${error}Error] Error processing ${path}:`, message).as(null),
+    );
 ```
 
-Note that when all effected programs are synchronous, `Effected.all()` and `Effected.allSeq()` behave identically.
+However, when dealing with complex control flow, generator syntax might be more readable:
+
+```typescript
+// Generator syntax
+const submitOrder = (order: Order) =>
+  effected(function* () {
+    const [config, user] = yield* Effected.all([askConfig(), askCurrentUser()]);
+    yield* validateOrder(order, user);
+    const result = yield* saveOrder(order, config.apiUrl);
+    yield* sendNotification(user.email, "Order submitted");
+    return result;
+  });
+
+// Pipeline syntax
+const submitOrder = (order: Order) =>
+  Effected.all([askConfig(), askCurrentUser()]).andThen(([config, user]) =>
+    validateOrder(order, user).andThen(() =>
+      saveOrder(order, config.apiUrl).tap(() =>
+        sendNotification(user.email, "Order submitted").asVoid(),
+      ),
+    ),
+  );
+```
+
+While the pipeline syntax shown above is more compact, it may not be as readable as the generator syntax for most developers since it involves more nesting.
+
+Both generator syntax and pipeline syntax are fully supported in tinyeffect — choose whichever approach makes your code most readable and maintainable for you and your team. The best choice often depends on the specific task and your team’s preferences.
