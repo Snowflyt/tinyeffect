@@ -1472,6 +1472,37 @@ test("Effects without generators (Pipeline syntax)", () => {
     expect(Effected.of(42).as("Hello, world!").runSync()).toBe("Hello, world!");
     expect(Effected.of(42).asVoid().runSync()).toBe(undefined);
   }
+
+  // Test combining effects with zip
+  {
+    type User = { id: number; name: string; role: "admin" | "user" };
+    const askCurrentUser = dependency("currentUser")<User | null>;
+
+    const getUserName = askCurrentUser().map((user) => user?.name || "Guest");
+    const askTheme = dependency("theme")<"light" | "dark">;
+
+    const welcomeMessage1 = getUserName
+      .zip(askTheme())
+      .map(([username, theme]) => `Welcome ${username}! Using ${theme} theme.`);
+
+    expect(
+      welcomeMessage1
+        .provide("currentUser", { id: 1, name: "Alice", role: "admin" })
+        .provide("theme", "dark")
+        .runSync(),
+    ).toBe("Welcome Alice! Using dark theme.");
+
+    const welcomeMessage2 = getUserName.zip(
+      askTheme(),
+      (username, theme) => `Welcome ${username}! Using ${theme} theme.`,
+    );
+    expect(
+      welcomeMessage2
+        .provide("currentUser", { id: 1, name: "Alice", role: "admin" })
+        .provide("theme", "dark")
+        .runSync(),
+    ).toBe("Welcome Alice! Using dark theme.");
+  }
 });
 
 test("Pipeline Syntax VS Generator Syntax", async () => {

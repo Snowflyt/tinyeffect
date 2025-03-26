@@ -882,6 +882,51 @@ test("Effects without generators", () => {
     expect(Effected.of(42).as("Hello, world!")).to(equal<Effected<never, string>>);
     expect(Effected.of(42).asVoid()).to(equal<Effected<never, void>>);
   }
+
+  {
+    type User = { id: number; name: string; role: "admin" | "user" };
+    const askCurrentUser = dependency("currentUser")<User | null>;
+
+    const getUserName = askCurrentUser().map((user) => user?.name || "Guest");
+    const askTheme = dependency("theme")<"light" | "dark">;
+
+    expect(getUserName.zip(askTheme())).to(
+      equal<
+        Effected<
+          | Effect<"dependency:currentUser", [], User | null>
+          | Effect<"dependency:theme", [], "light" | "dark">,
+          [string, "light" | "dark"]
+        >
+      >,
+    );
+
+    const welcomeMessage1 = getUserName
+      .zip(askTheme())
+      .map(([username, theme]) => `Welcome ${username}! Using ${theme} theme.`);
+    expect(welcomeMessage1).to(
+      equal<
+        Effected<
+          | Effect<"dependency:currentUser", [], User | null>
+          | Effect<"dependency:theme", [], "light" | "dark">,
+          string
+        >
+      >,
+    );
+
+    const welcomeMessage2 = getUserName.zip(
+      askTheme(),
+      (username, theme) => `Welcome ${username}! Using ${theme} theme.`,
+    );
+    expect(welcomeMessage2).to(
+      equal<
+        Effected<
+          | Effect<"dependency:currentUser", [], User | null>
+          | Effect<"dependency:theme", [], "light" | "dark">,
+          string
+        >
+      >,
+    );
+  }
 });
 
 test("Pipeline Syntax V.S. Generator Syntax", () => {

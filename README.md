@@ -1371,6 +1371,29 @@ Effected.of(42).asVoid().runSync(); // => undefined
 
 In most cases, `.andThen()` is recommended over `.map()` and `.flatMap()` for its versatility and readability. A myth is that `.flatMap()/.map()` may provide better performance than `.andThen()` since they do not need to check if the handler returns a generator or another effected program. However, in practice, the performance difference is negligible, so it’s better to use `.andThen()` directly for simplicity and consistency.
 
+For convenience, tinyeffect also provides a `.zip()` method to combine two effected programs sequentially (unlike `Effected.all()` which runs them in parallel). The `.zip()` method either returns their results as a tuple `[A, B]` or applies a mapper function to transform the combined results:
+
+```typescript
+// Get user and settings
+const getUserName = askCurrentUser().map((user) => user?.name || "Guest");
+const askTheme = dependency("theme")<"light" | "dark">;
+
+// Combine them with zip to create a welcome message with theme info
+const welcomeMessage = getUserName
+  .zip(askTheme()) // Returns a tuple [username, theme]
+  .map(([username, theme]) => `Welcome ${username}! Using ${theme} theme.`);
+
+// You can also provide a mapper function directly to zip:
+const welcomeMessage = getUserName.zip(
+  askTheme(),
+  (username, theme) => `Welcome ${username}! Using ${theme} theme.`,
+);
+
+// Both approaches produce the same result when run
+```
+
+Just like `.andThen()`, `.zip()` also allows you to use a generator function or another effected program as the handler, which will be flattened automatically.
+
 ### Pipeline Syntax V.S. Generator Syntax
 
 Both pipeline syntax and generator syntax are valid approaches for working with effected programs in tinyeffect. Each approach has distinct advantages:

@@ -975,6 +975,53 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   }
 
   /**
+   * Combines the return value of the current effected program with another effected program.
+   *
+   * Note: This method runs the two effected programs sequentially. To run them in parallel, use
+   * {@link Effected.all}.
+   * @param that The other effected program to combine with.
+   * @param mapper A optional function that takes the return value of the current program and the
+   * other program and returns a new value.
+   * @returns
+   */
+  zip<S, F extends Effect>(that: Effected<F, S>): Effected<E | F, [R, S]>;
+  zip<S, F extends Effect, T, G extends Effect = never>(
+    that: Effected<F, S>,
+    mapper: (a: R, b: S) => T | Generator<G, T, unknown> | Effected<G, T>,
+  ): Effected<E | F | G, T>;
+  zip(that: Effected<Effect, unknown>, mapper?: any): Effected<Effect, unknown> {
+    return effected(() => {
+      const iterator = this[Symbol.iterator]();
+      const thatIterator = that[Symbol.iterator]();
+      let selfDone = false;
+      let selfDoneValue: unknown;
+      let thatDone = false;
+      let appendedIterator: Iterator<Effect, unknown, unknown>;
+      return {
+        next: (...args: [] | [unknown]) => {
+          if (selfDone && thatDone) return appendedIterator.next(...args);
+          if (!selfDone) {
+            const result = iterator.next(...args);
+            if (!result.done) return result;
+            selfDone = true;
+            selfDoneValue = result.value;
+          }
+          const thatResult = thatIterator.next(...args);
+          if (!thatResult.done) return thatResult;
+          thatDone = true;
+          if (mapper) {
+            const it = mapper(selfDoneValue, thatResult.value);
+            if (!(it instanceof Effected) && !isGenerator(it)) return { done: true, value: it };
+            appendedIterator = it[Symbol.iterator]();
+            return appendedIterator.next();
+          }
+          return { done: true, value: [selfDoneValue, thatResult.value] };
+        },
+      };
+    }) as never;
+  }
+
+  /**
    * Catch an error effect with a handler.
    *
    * It is a shortcut for `terminate("error:" + name, handler)`.
@@ -1243,6 +1290,12 @@ interface EffectedDraft<
   tap<F extends Effect = never>(
     handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,
   ): EffectedDraft<P, E | F, R>;
+
+  zip<S, F extends Effect>(that: Effected<F, S>): EffectedDraft<P, E | F, [R, S]>;
+  zip<S, F extends Effect, T, G extends Effect = never>(
+    that: Effected<F, S>,
+    mapper: (a: R, b: S) => T | Generator<G, T, unknown> | Effected<G, T>,
+  ): EffectedDraft<P, E | F | G, T>;
 
   catch<Name extends ErrorName<ExtractEffect<E>>, T, F extends Effect = never>(
     effect: Name,

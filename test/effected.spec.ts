@@ -2145,6 +2145,247 @@ describe("Effected#tap", () => {
   });
 });
 
+describe("Effected#zip", () => {
+  const log = effect("log")<[message: string], void>;
+  const fetchData = effect("fetchData")<[id: string], string>;
+  const compute = effect("compute")<[value: number], number>;
+  const customError = error("custom");
+
+  it("should combine two effected programs sequentially and return a tuple", () => {
+    const program1 = Effected.of(42);
+    const program2 = Effected.of("hello");
+
+    const combined = program1.zip(program2);
+    expect(combined.runSync()).toEqual([42, "hello"]);
+  });
+
+  it("should run effects from both programs in sequence", () => {
+    const logs: string[] = [];
+
+    const program1 = effected(function* () {
+      yield* log("program1");
+      return 1;
+    });
+
+    const program2 = effected(function* () {
+      yield* log("program2");
+      return 2;
+    });
+
+    const combined = program1.zip(program2);
+    const result = combined
+      .resume("log", (message) => {
+        logs.push(message);
+      })
+      .runSync();
+
+    expect(result).toEqual([1, 2]);
+    expect(logs).toEqual(["program1", "program2"]);
+  });
+
+  it("should apply a mapper function to transform the results", () => {
+    const program1 = Effected.of(5);
+    const program2 = Effected.of(10);
+
+    const combined = program1.zip(program2, (a, b) => a + b);
+    expect(combined.runSync()).toEqual(15);
+
+    // More complex transformation
+    const objCombined = program1.zip(program2, (a, b) => ({ sum: a + b, product: a * b }));
+    expect(objCombined.runSync()).toEqual({ sum: 15, product: 50 });
+  });
+
+  it("should support mapper functions that return generators", () => {
+    const program1 = Effected.of(5);
+    const program2 = Effected.of(10);
+    const logs: string[] = [];
+
+    const combined = program1.zip(program2, function* (a, b) {
+      yield* log(`Combining ${a} and ${b}`);
+      return a * b;
+    });
+
+    const result = combined
+      .resume("log", (message) => {
+        logs.push(message);
+      })
+      .runSync();
+
+    expect(result).toEqual(50);
+    expect(logs).toEqual(["Combining 5 and 10"]);
+  });
+
+  it("should support mapper functions that return effected programs", () => {
+    const program1 = Effected.of(5);
+    const program2 = Effected.of(10);
+
+    const combined = program1.zip(program2, (a, b) =>
+      effected(function* () {
+        const computed = yield* compute(a + b);
+        return computed;
+      }),
+    );
+
+    const result = combined.resume("compute", (value) => value * 2).runSync();
+    expect(result).toEqual(30); // (5 + 10) * 2
+  });
+
+  it("should handle errors in the first program", () => {
+    const errorProgram = effected(function* () {
+      yield* customError("Error in first program");
+      return 1;
+    });
+
+    const goodProgram = Effected.of(2);
+
+    const combined = errorProgram.zip(goodProgram);
+
+    let errorMessage: string | undefined;
+    const result = combined
+      .catch("custom", (message) => {
+        errorMessage = message;
+        return "error-result";
+      })
+      .runSync();
+
+    expect(result).toBe("error-result");
+    expect(errorMessage).toBe("Error in first program");
+  });
+
+  it("should handle errors in the second program", () => {
+    const goodProgram = Effected.of(1);
+
+    const errorProgram = effected(function* () {
+      yield* customError("Error in second program");
+      return 2;
+    });
+
+    const combined = goodProgram.zip(errorProgram);
+
+    let errorMessage: string | undefined;
+    const result = combined
+      .catch("custom", (message) => {
+        errorMessage = message;
+        return "error-result";
+      })
+      .runSync();
+
+    expect(result).toBe("error-result");
+    expect(errorMessage).toBe("Error in second program");
+  });
+
+  it("should handle errors in the mapper function", () => {
+    const program1 = Effected.of(1);
+    const program2 = Effected.of(2);
+
+    const combined = program1.zip(program2, function* (a, b) {
+      yield* customError(`Error in mapper with ${a} and ${b}`);
+      return a + b;
+    });
+
+    let errorMessage: string | undefined;
+    const result = combined
+      .catch("custom", (message) => {
+        errorMessage = message;
+        return "error-result";
+      })
+      .runSync();
+
+    expect(result).toBe("error-result");
+    expect(errorMessage).toBe("Error in mapper with 1 and 2");
+  });
+
+  it("should support async operations", async () => {
+    const asyncProgram1 = effected(function* () {
+      const data = yield* fetchData("user");
+      return data;
+    });
+
+    const asyncProgram2 = effected(function* () {
+      const data = yield* fetchData("settings");
+      return data;
+    });
+
+    const combined = asyncProgram1.zip(asyncProgram2, (user, settings) => ({
+      user,
+      settings,
+      combined: `${user}-${settings}`,
+    }));
+
+    const result = await combined
+      .handle("fetchData", ({ resume }, id) => {
+        setTimeout(() => {
+          resume(`data-for-${id}`);
+        }, 10);
+      })
+      .runAsync();
+
+    expect(result).toEqual({
+      user: "data-for-user",
+      settings: "data-for-settings",
+      combined: "data-for-user-data-for-settings",
+    });
+  });
+
+  it("should chain multiple zip operations", () => {
+    const program1 = Effected.of("Hello");
+    const program2 = Effected.of("World");
+    const program3 = Effected.of("!");
+
+    const result = program1
+      .zip(program2, (a, b) => `${a} ${b}`)
+      .zip(program3, (greeting, punctuation) => `${greeting}${punctuation}`)
+      .runSync();
+
+    expect(result).toBe("Hello World!");
+  });
+
+  it("should maintain independence across multiple executions", () => {
+    let count1 = 0;
+    let count2 = 0;
+
+    const program1 = Effected.from(() => {
+      count1++;
+      return `execution-${count1}`;
+    });
+
+    const program2 = Effected.from(() => {
+      count2++;
+      return count2;
+    });
+
+    const combined = program1.zip(program2);
+
+    // First execution
+    expect(combined.runSync()).toEqual(["execution-1", 1]);
+
+    // Second execution
+    expect(combined.runSync()).toEqual(["execution-2", 2]);
+
+    // Third execution
+    expect(combined.runSync()).toEqual(["execution-3", 3]);
+  });
+
+  it("should work with different types in the two programs", () => {
+    // Testing with various types
+    const types = [
+      [42, "string"],
+      [true, { complex: "object" }],
+      [null, undefined],
+      [[1, 2, 3], new Map([["key", "value"]])],
+      [new Date(), /regex/],
+    ];
+
+    for (const [value1, value2] of types) {
+      const program1 = Effected.of(value1);
+      const program2 = Effected.of(value2);
+      const combined = program1.zip(program2);
+
+      expect(combined.runSync()).toEqual([value1, value2]);
+    }
+  });
+});
+
 describe("Effected transformation methods composition", () => {
   const add = effect("add")<[a: number, b: number], number>;
   const multiply = effect("multiply")<[a: number, b: number], number>;
