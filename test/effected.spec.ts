@@ -620,6 +620,256 @@ describe("effected", () => {
   });
 });
 
+describe("Default handlers", () => {
+  it("should apply default handlers when no explicit handler is provided", () => {
+    const logs: string[] = [];
+
+    const println = effect<"println", [message: string], void>("println", {
+      defaultHandler: ({ resume }, message) => {
+        logs.push(message);
+        resume();
+      },
+    });
+
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+      yield* println("Another message");
+      return "Done";
+    });
+
+    // Should run without errors using default handler
+    expect(program.runSync()).toBe("Done");
+    expect(logs).toEqual(["Hello, world!", "Another message"]);
+  });
+
+  it("should allow explicit handlers to override default handlers", () => {
+    const logs: string[] = [];
+
+    const println = effect<"println", [message: string], void>("println", {
+      defaultHandler: ({ resume }, message) => {
+        logs.push(`Default: ${message}`);
+        resume();
+      },
+    });
+
+    const program = effected(function* () {
+      yield* println("First message");
+      yield* println("Second message");
+      return "Done";
+    });
+
+    // Override with explicit handler
+    const result = program
+      .resume("println", (message) => {
+        logs.push(`Custom: ${message}`);
+      })
+      .runSync();
+
+    expect(result).toBe("Done");
+    expect(logs).toEqual(["Custom: First message", "Custom: Second message"]);
+
+    // Run with default handler again
+    logs.length = 0;
+    expect(program.runSync()).toBe("Done");
+    expect(logs).toEqual(["Default: First message", "Default: Second message"]);
+  });
+
+  it("should support default handlers that are generator functions", () => {
+    const logs: string[] = [];
+    const innerLog = effect("innerLog")<[message: string], void>;
+
+    const println = effect<[message: string], void>()("println", {
+      *defaultHandler({ resume }, message) {
+        yield* innerLog(`Processing: ${message}`);
+        logs.push(`Println: ${message}`);
+        resume();
+      },
+    });
+
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+      return "Done";
+    });
+
+    const result = program
+      .resume("innerLog", (message) => {
+        logs.push(`Inner: ${message}`);
+      })
+      .runSync();
+
+    expect(result).toBe("Done");
+    expect(logs).toEqual(["Inner: Processing: Hello, world!", "Println: Hello, world!"]);
+  });
+
+  it("should support default handlers that return effected programs", () => {
+    const logs: string[] = [];
+    const innerLog = effect("innerLog")<[message: string], void>;
+
+    const println = effect<[message: string], void>()("println", {
+      defaultHandler: ({ resume }, message) => {
+        return effected(function* () {
+          yield* innerLog(`Processing: ${message}`);
+          logs.push(`Println: ${message}`);
+          resume();
+        });
+      },
+    });
+
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+      return "Done";
+    });
+
+    const result = program
+      .resume("innerLog", (message) => {
+        logs.push(`Inner: ${message}`);
+      })
+      .runSync();
+
+    expect(result).toBe("Done");
+    expect(logs).toEqual(["Inner: Processing: Hello, world!", "Println: Hello, world!"]);
+  });
+
+  it("should support default handlers for dependencies", () => {
+    type Config = { apiUrl: string; timeout: number };
+    const defaultConfig: Config = { apiUrl: "https://default-api.example.com", timeout: 5000 };
+
+    const getConfig = dependency<"config", Config>("config", () => defaultConfig);
+
+    const program = effected(function* () {
+      const config = yield* getConfig();
+      return config;
+    });
+
+    // Using default handler
+    expect(program.runSync()).toEqual(defaultConfig);
+
+    // Using explicit provider
+    const customConfig: Config = { apiUrl: "https://custom-api.example.com", timeout: 3000 };
+    expect(program.provide("config", customConfig).runSync()).toEqual(customConfig);
+  });
+
+  it("should support default handlers that use terminate (though not recommended)", () => {
+    const safeDivide = effect<[a: number, b: number], number, string>()("safeDivide", {
+      defaultHandler: ({ resume, terminate }, a, b) => {
+        if (b === 0) {
+          terminate("Cannot divide by zero");
+          return;
+        }
+        resume(a / b);
+      },
+    });
+
+    const goodProgram = effected(function* () {
+      const result = yield* safeDivide(10, 2);
+      return `Result: ${result}`;
+    });
+
+    const badProgram = effected(function* () {
+      const result = yield* safeDivide(10, 0);
+      return `Result: ${result}`;
+    });
+
+    expect(goodProgram.runSync()).toBe("Result: 5");
+    expect(badProgram.runSync()).toBe("Cannot divide by zero");
+  });
+
+  it("should handle async operations in default handlers", async () => {
+    const fetchData = effect<[url: string], any>()("fetchData", {
+      defaultHandler: ({ resume }, url) => {
+        setTimeout(() => {
+          resume({ url, data: "Sample data" });
+        }, 10);
+      },
+    });
+
+    const program = effected(function* () {
+      const data = yield* fetchData("https://api.example.com/data");
+      return data;
+    });
+
+    const result = await program.runAsync();
+    expect(result).toEqual({ url: "https://api.example.com/data", data: "Sample data" });
+  });
+
+  it("should properly handle chained effects with default handlers", () => {
+    const logs: string[] = [];
+
+    const log = effect<[message: string], void>()("log", {
+      defaultHandler: ({ resume }, message) => {
+        logs.push(message);
+        resume();
+      },
+    });
+
+    const greet = effect<[name: string], string>()("greet", {
+      defaultHandler: ({ resume }, name) => {
+        resume(`Hello, ${name}!`);
+      },
+    });
+
+    const program = effected(function* () {
+      yield* log("Starting program");
+      const greeting = yield* greet("World");
+      yield* log(greeting);
+      return greeting;
+    });
+
+    expect(program.runSync()).toBe("Hello, World!");
+    expect(logs).toEqual(["Starting program", "Hello, World!"]);
+  });
+
+  it("should properly propagate effects from default handlers", () => {
+    const innerLog = effect("innerLog")<[message: string], void>;
+    const logs: string[] = [];
+
+    // Effect with a default handler that yields another effect
+    const logTwice = effect<[message: string], void>()("logTwice", {
+      *defaultHandler({ resume }, message) {
+        yield* innerLog(`First: ${message}`);
+        yield* innerLog(`Second: ${message}`);
+        resume();
+      },
+    });
+
+    const program = effected(function* () {
+      yield* logTwice("Hello");
+      return "Done";
+    });
+
+    // We need to handle the inner effect
+    const result = program
+      .resume("innerLog", (message) => {
+        logs.push(message);
+      })
+      .runSync();
+
+    expect(result).toBe("Done");
+    expect(logs).toEqual(["First: Hello", "Second: Hello"]);
+  });
+
+  it("should throw UnhandledEffectError when effects from default handlers are not handled", () => {
+    const innerLog = effect("innerLog")<[message: string], void>;
+
+    // Effect with a default handler that yields another effect
+    const logWithEffect = effect<[message: string], void>()("logWithEffect", {
+      *defaultHandler({ resume }, message) {
+        yield* innerLog(message); // This effect is not handled
+        resume();
+      },
+    });
+
+    const program = effected(function* () {
+      yield* logWithEffect("Test message");
+      return "Done";
+    });
+
+    // Should throw because innerLog is not handled
+    expect(() => program.runSyncUnsafe()).toThrow(UnhandledEffectError);
+    expect(() => program.runSyncUnsafe()).toThrow(/innerLog/);
+  });
+});
+
 describe("Effected.all", () => {
   const delay = effect("delay")<[ms: number, label: string], string>;
 
@@ -653,6 +903,83 @@ describe("Effected.all", () => {
         }, ms);
       })
       .runAsync();
+
+    const parallelTime = Date.now() - startTime;
+
+    // Clear execution order and restart timer
+    executeOrder.length = 0;
+    const seqStartTime = Date.now();
+
+    // Run the same effects in sequence
+    const sequentialResult = await Effected.allSeq([effect1, effect2, effect3])
+      .handle("delay", ({ resume }, ms, label) => {
+        executeOrder.push(`${label} start`);
+        setTimeout(() => {
+          executeOrder.push(`${label} end`);
+          resume(label);
+        }, ms);
+      })
+      .runAsync();
+
+    const sequentialTime = Date.now() - seqStartTime;
+
+    // Check results are the same
+    expect(parallelResult).toEqual(sequentialResult);
+
+    // Verify parallel behavior
+    // 1. Time check: parallel should be closer to max time than sum time
+    const sumTime = 100 + 50 + 75; // 225ms
+
+    // Parallel time should be closer to maxTime (with some tolerance)
+    expect(parallelTime).toBeLessThan(sumTime * 0.7); // Less than 70% of sequential time
+
+    // Sequential time should be close to sumTime
+    expect(sequentialTime).toBeGreaterThanOrEqual(sumTime * 0.9); // At least 90% of expected sum
+
+    // 2. Execution order check for sequential
+    // In sequential execution, each effect should complete before the next starts
+    expect(executeOrder).toEqual([
+      "effect1 start",
+      "effect1 end",
+      "effect2 start",
+      "effect2 end",
+      "effect3 start",
+      "effect3 end",
+    ]);
+  });
+
+  it("should run effects in parallel for default handlers", async () => {
+    const delay = effect<"delay", [ms: number, label: string], string>("delay", {
+      defaultHandler: ({ resume }, ms, label) => {
+        executeOrder.push(`${label} start`);
+        setTimeout(() => {
+          executeOrder.push(`${label} end`);
+          resume(label);
+        }, ms);
+      },
+    });
+
+    const executeOrder: string[] = [];
+    const startTime = Date.now();
+
+    // Create three effects with different delays
+    const effect1 = effected(function* () {
+      const result = yield* delay(100, "effect1");
+      return result;
+    });
+
+    const effect2 = effected(function* () {
+      const result = yield* delay(50, "effect2");
+      return result;
+    });
+
+    const effect3 = effected(function* () {
+      const result = yield* delay(75, "effect3");
+      return result;
+    });
+
+    // Run them in parallel
+    const parallelResult = await Effected.all([effect1, effect2, effect3]).runAsync();
 
     const parallelTime = Date.now() - startTime;
 

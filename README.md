@@ -711,6 +711,78 @@ When you run `program.runSync()`, the output will be:
 "world"
 ```
 
+### Default handlers
+
+Having to explicitly handle every effect can become tedious, especially for common effects like `println` or `random`. To address this, tinyeffect allows you to define default handlers that are automatically used when no specific handler is provided:
+
+```typescript
+const println = effect<unknown[], void>()("println", {
+  defaultHandler: ({ resume }, ...args) => {
+    console.log(...args);
+    resume();
+  },
+});
+
+const program = effected(function* () {
+  yield* println("Hello, world!");
+});
+program.runSync(); // No compile-time or runtime error
+// Hello, world!
+```
+
+Note the syntax difference when defining effects with default handlers. Instead of using `effect(name, options)<Parameters, ReturnType>`, we use `effect<Parameters, ReturnType, TerminatedType = never>()(name, options)`—do not forget the empty parentheses after `effect`. This difference exists because the type arguments are needed to accurately infer the handler’s type.
+
+For better type clarity, you can use the `Effect` type and `EffectFactory` helper:
+
+```typescript
+import { type Default, type Effect, type EffectFactory, effect } from "tinyeffect";
+
+type Println = Default<Effect<"println", unknown[], void>>;
+const println: EffectFactory<Println> = effect("println", {
+  defaultHandler: ({ resume }, ...args) => {
+    console.log(...args);
+    resume();
+  },
+});
+```
+
+Default handlers don’t prevent you from explicitly handling these effects. When you provide your own handler, it takes precedence over the default:
+
+```typescript
+const program = effected(function* () {
+  yield* println("Hello, world!");
+}).resume("println", () => {
+  console.log("This will be logged instead of the default handler");
+});
+
+program.runSync();
+// This will be logged instead of the default handler
+```
+
+Just like regular handlers, default handlers can also be generator functions or return effected programs, letting you handle effects using other effects.
+
+The `dependency` helper also supports default handlers. You can provide a factory function as the second argument, which returns a default value when no explicit provider is given:
+
+```typescript
+const askCurrentUser = dependency<User | null>()("currentUser", () => ({
+  id: 1,
+  name: "Charlie",
+  role: "admin",
+}));
+```
+
+Besides, it is worth noting that the `Default` type signature may appear more complex than expected:
+
+```typescript
+type Default<E extends Effect, T = never, F extends Effect = never> = ...
+```
+
+Here, `E` represents the effect type, `T` is the terminate type (used if `terminate` is called in the default handler), and `F` represents any additional effects that might be performed by the default handler (when using a generator function or returning another effected program).
+
+> [!NOTE]
+>
+> Default handlers technically support `terminate`, but this is not recommended since it always terminates the entire effected program (the `Effected` instance) with a specific value, which is usually unexpected behavior. It’s better to use `resume` in default handlers to allow the program to continue executing. If you want to terminate the program, it’s preferable to explicitly handle the effect with `.terminate()` rather than relying on a default handler.
+
 ### Chaining effected programs with `.andThen()` and `.tap()`
 
 Sometimes, you may want to transform a program’s return value, or chain another effected program after the current one. Let’s revisit the `safeDivide` example:
@@ -884,9 +956,9 @@ const handleErrorAsResult = <R, E extends Effect, ErrorName extends string>(
 
   return effected
     .andThen((value) => ok(value))
-    .handle(isErrorEffect, ({ effect, terminate }, message) => {
+    .handle(isErrorEffect, (({ effect, terminate }: any, message: any) => {
       terminate(err({ error: effect.name.slice("error:".length), message }));
-    });
+    }) as never) as Effected<E, Result<R, { error: ErrorName; message?: string }>>;
 };
 ```
 

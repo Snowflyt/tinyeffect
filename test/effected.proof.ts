@@ -3,6 +3,7 @@ import { beNever, describe, equal, expect, it, error as triggerError } from "typ
 import { dependency, effect, effected, error } from "../src";
 import { Effected } from "../src/effected";
 import type {
+  Default,
   Effect,
   EffectFactory,
   InferEffect,
@@ -181,6 +182,84 @@ describe("effected", () => {
     );
     expect<InferEffect<typeof program3>>().to(equal<Effect<"now", [], Date>>);
     expect<InferEffect<typeof program4>>().to(beNever);
+  });
+});
+
+describe("Default handlers", () => {
+  it("should correctly infer return types from default handlers", () => {
+    type Result<T> = { success: boolean; value?: T; error?: string };
+
+    const computeValue = effect<[n: number], Result<number>>()("computeValue", {
+      defaultHandler: ({ resume }, n) => {
+        if (n < 0) resume({ success: false, error: "Input must be positive" });
+        else resume({ success: true, value: n * 2 });
+      },
+    });
+
+    expect(computeValue).to(
+      equal<
+        (
+          n: number,
+        ) => Effected<Default<Effect<"computeValue", [n: number], Result<number>>>, Result<number>>
+      >,
+    );
+
+    const program = effected(function* () {
+      return yield* computeValue(10);
+    });
+    expect(program).to(
+      equal<Effected<Default<Effect<"computeValue", [n: number], Result<number>>>, Result<number>>>,
+    );
+    expect(computeValue(10)).to(
+      equal<Effected<Default<Effect<"computeValue", [n: number], Result<number>>>, Result<number>>>,
+    );
+  });
+
+  it("should work with the Default type for type annotations", () => {
+    type LogDefault = Default<Effect<"log", [message: string], void>>;
+
+    const log: EffectFactory<LogDefault> = effect("log", {
+      defaultHandler: ({ resume }, message) => {
+        console.log(message);
+        resume();
+      },
+    });
+
+    const program = effected(function* () {
+      yield* log("Test message");
+      return "Done";
+    });
+    expect(program).to(equal<Effected<Default<Effect<"log", [message: string], void>>, string>>);
+    expect(log("Test message")).to(
+      equal<Effected<Default<Effect<"log", [message: string], void>>, void>>,
+    );
+  });
+
+  it("should allow specifying additional effects in default handlers via Default type", () => {
+    const innerLog = effect("innerLog")<[message: string], void>;
+
+    type ComplexDefault = Default<
+      Effect<"complex", [value: number], string>,
+      never, // Terminate type
+      Effect<"innerLog", [message: string], void> // Additional effects
+    >;
+
+    const complexEffect: EffectFactory<ComplexDefault> = effect("complex", {
+      *defaultHandler({ resume }, value) {
+        yield* innerLog(`Processing value: ${value}`);
+        resume(`Result: ${value * 2}`);
+      },
+    });
+
+    const program = effected(function* () {
+      const result = yield* complexEffect(21);
+      return result;
+    }).resume("innerLog", (_message) => {});
+
+    expect(program).to(
+      equal<Effected<Default<Effect<"complex", [value: number], string>>, string>>,
+    );
+    expect(program.runSync()).to(equal<string>);
   });
 });
 

@@ -623,6 +623,72 @@ test("Handling effects with another effected program", () => {
   }
 });
 
+test("Default handlers", () => {
+  const logs: unknown[][] = [];
+  const println = effect<unknown[], void>()("println", {
+    defaultHandler: ({ resume }, ...args) => {
+      logs.push(args);
+      resume();
+    },
+  });
+
+  {
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+    });
+    expect(program.runSync).not.toThrow();
+    expect(logs).toEqual([["Hello, world!"]]);
+    logs.length = 0;
+
+    expect(println("Hello, world!").runSync).not.toThrow();
+    expect(logs).toEqual([["Hello, world!"]]);
+    logs.length = 0;
+  }
+
+  {
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+    }).resume("println", () => {
+      logs.push(["This will be logged instead of the default handler"]);
+    });
+    expect(program.runSync).not.toThrow();
+    expect(logs).toEqual([["This will be logged instead of the default handler"]]);
+    logs.length = 0;
+
+    expect(
+      println("Hello, world!").resume("println", () => {
+        logs.push(["This will be logged instead of the default handler"]);
+      }).runSync,
+    ).not.toThrow();
+    expect(logs).toEqual([["This will be logged instead of the default handler"]]);
+    logs.length = 0;
+  }
+
+  {
+    type User = { id: number; name: string; role: "admin" | "user" };
+
+    const askCurrentUser = dependency<User | null>()("currentUser", () => ({
+      id: 1,
+      name: "Charlie",
+      role: "admin",
+    }));
+
+    const program = effected(function* () {
+      const user = yield* askCurrentUser();
+      yield* println("Current user:", user);
+    });
+    expect(program.runSync).not.toThrow();
+    expect(logs).toEqual([["Current user:", { id: 1, name: "Charlie", role: "admin" }]]);
+    logs.length = 0;
+
+    expect(
+      program.provide("currentUser", { id: 2, name: "Alice", role: "user" }).runSync,
+    ).not.toThrow();
+    expect(logs).toEqual([["Current user:", { id: 2, name: "Alice", role: "user" }]]);
+    logs.length = 0;
+  }
+});
+
 test("Handling return values", () => {
   {
     type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
@@ -752,9 +818,9 @@ test("Handling multiple effects in one handler", () => {
 
       return effected
         .andThen((value) => ok(value))
-        .handle(isErrorEffect, ({ effect, terminate }: any, message: any) => {
+        .handle(isErrorEffect, (({ effect, terminate }: any, message: any) => {
           terminate(err({ error: effect.name.slice("error:".length), message }));
-        });
+        }) as never) as Effected<E, Result<R, { error: ErrorName; message?: string }>>;
     };
 
     type TypeError = Effect.Error<"type">;

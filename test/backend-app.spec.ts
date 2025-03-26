@@ -4,7 +4,7 @@
 
 import { expect, test, vi } from "vitest";
 
-import type { Effect, EffectFactory, Effected } from "../src";
+import type { Default, Effect, EffectFactory, Effected } from "../src";
 import { dependency, effect, effected, error } from "../src";
 
 /******************
@@ -44,8 +44,13 @@ const verify = (password: string, hashed: string) => hashed === encrypt(password
 /***********
  * Effects *
  ***********/
-type Println = Effect<"println", unknown[], void>;
-const println: EffectFactory<Println> = effect("println");
+type Println = Default<Effect<"println", unknown[], void>>;
+const println: EffectFactory<Println> = effect("println", {
+  defaultHandler: ({ resume }, ...args: unknown[]) => {
+    console.log(...args);
+    resume();
+  },
+});
 
 type AuthenticationError = Effect.Error<"authentication">;
 const authenticationError: EffectFactory<AuthenticationError> = error("authentication");
@@ -129,10 +134,9 @@ test("app", () => {
     .resume("setCurrentUser", (user) => {
       currentUser = user;
     })
-    .catch("authentication", console.error)
-    .catch("unauthorized", console.error)
-    .catch("userNotFound", console.error)
-    .resume("println", (...args) => console.log(...args));
+    .catchAll((error, message) => {
+      console.error(`Error(${error})` + (message ? `: ${message}` : ""));
+    });
 
   const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   program.runSync();

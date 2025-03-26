@@ -62,6 +62,21 @@ export type Unresumable<E extends Effect> = E & {
   readonly resumable: false;
 };
 
+/**
+ * Mark an {@link Effect} as unresumable.
+ */
+export type Default<E extends Effect, T = never, F extends Effect = never> = E & {
+  readonly defaultHandler: ({
+    effect,
+    resume,
+    terminate,
+  }: {
+    effect: Effect; // NOTE: Use `Effect` instead of stricter `E` is intentional to make `E` covariant
+    resume: (value: E["__returnType"]) => void;
+    terminate: (value: T) => void;
+  }) => Effected<F, E["__returnType"] | T>;
+};
+
 declare const unhandledEffect: unique symbol;
 /**
  * A type representing unhandled effects.

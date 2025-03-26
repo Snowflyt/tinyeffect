@@ -2,7 +2,14 @@
 
 import { equal, expect, extend, test, error as triggerError } from "typroof";
 
-import type { Effect, EffectFactory, InferEffect, UnhandledEffect, Unresumable } from "../src";
+import type {
+  Default,
+  Effect,
+  EffectFactory,
+  InferEffect,
+  UnhandledEffect,
+  Unresumable,
+} from "../src";
 import { Effected, defineHandlerFor, dependency, effect, effected, effectify, error } from "../src";
 
 type User = { id: number; name: string; role: "admin" | "user" };
@@ -338,6 +345,69 @@ test("Handling effects with another effected program", () => {
   }
 });
 
+test("Default handlers", () => {
+  const println = effect<unknown[], void>()("println", {
+    defaultHandler: ({ resume }, ...args) => {
+      console.log(...args);
+      resume();
+    },
+  });
+
+  {
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+    });
+    expect(program).to(equal<Effected<Default<Effect<"println", unknown[], void>>, void>>);
+
+    expect(println("Hello, world!")).to(
+      equal<Effected<Default<Effect<"println", unknown[], void>>, void>>,
+    );
+  }
+
+  {
+    const program = effected(function* () {
+      yield* println("Hello, world!");
+    }).resume("println", () => {
+      console.log("This will be logged instead of the default handler");
+    });
+    expect(program).to(equal<Effected<never, void>>);
+
+    expect(
+      println("Hello, world!").resume("println", () => {
+        console.log("This will be logged instead of the default handler");
+      }),
+    ).to(equal<Effected<never, void>>);
+  }
+
+  {
+    type User = { id: number; name: string; role: "admin" | "user" };
+
+    const askCurrentUser = dependency<User | null>()("currentUser", () => ({
+      id: 1,
+      name: "Charlie",
+      role: "admin",
+    }));
+
+    const program = effected(function* () {
+      const user = yield* askCurrentUser();
+      yield* println("Current user:", user);
+    });
+    expect(program).to(
+      equal<
+        Effected<
+          | Default<Effect<"println", unknown[], void>>
+          | Default<Effect<"dependency:currentUser", [], User | null>>,
+          void
+        >
+      >,
+    );
+
+    expect(program.provide("currentUser", { id: 2, name: "Alice", role: "user" })).to(
+      equal<Effected<Default<Effect<"println", unknown[], void>>, void>>,
+    );
+  }
+});
+
 test("Handling return values", () => {
   {
     type Raise = Unresumable<Effect<"raise", [error: unknown], never>>;
@@ -469,9 +539,9 @@ test("Handling multiple effects in one handler", () => {
 
       return effected
         .andThen((value) => ok(value))
-        .handle(isErrorEffect, ({ effect, terminate }: any, message: any) => {
+        .handle(isErrorEffect, (({ effect, terminate }: any, message: any) => {
           terminate(err({ error: effect.name.slice("error:".length), message }));
-        });
+        }) as never) as Effected<E, Result<R, { error: ErrorName; message?: string }>>;
     };
 
     const range2 = (start: number, stop: number) => handleErrorAsResult(range(start, stop));

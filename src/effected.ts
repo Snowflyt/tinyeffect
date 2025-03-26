@@ -1,5 +1,5 @@
 import { UnhandledEffectError } from "./errors";
-import type { UnhandledEffect, Unresumable } from "./types";
+import type { Default, UnhandledEffect, Unresumable } from "./types";
 import { Effect } from "./types";
 
 /**
@@ -32,16 +32,102 @@ import { Effect } from "./types";
  *
  * @see {@link effected}
  */
-export function effect<Name extends string | symbol, Resumable extends boolean = true>(
+export function effect<Payloads extends unknown[], R, T = never>(): <
+  Name extends string | symbol,
+  F extends Effect = never,
+  Resumable extends boolean = true,
+>(
   name: Name,
-  options?: { readonly resumable?: Resumable },
-): [Resumable] extends [false] ?
-  <Payloads extends unknown[], R extends never = never>(
+  options?: {
+    readonly resumable?: Resumable;
+    readonly defaultHandler?: [Resumable] extends [false] ?
+      (
+        {
+          effect,
+          terminate,
+        }: { effect: Effect<Name, Payloads, never>; terminate: (value: T) => void },
+        ...payloads: Payloads
+        // TODO: Define a type alias to reduce repetition
+        // eslint-disable-next-line sonarjs/use-type-alias
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    : (
+        {
+          effect,
+          resume,
+          terminate,
+        }: {
+          effect: Effect<Name, Payloads, R>;
+          resume: (value: R) => void;
+          terminate: (value: T) => void;
+        },
+        ...payloads: Payloads
+        // TODO: Define a type alias to reduce repetition
+      ) => void | Generator<F, void, unknown> | Effected<F, void>;
+  },
+) => [Resumable] extends [false] ?
+  (
     ...payloads: Payloads
-  ) => Effected<Unresumable<Effect<Name, Payloads, R>>, R>
-: <Payloads extends unknown[], R>(...payloads: Payloads) => Effected<Effect<Name, Payloads, R>, R> {
-  const result = (...payloads: unknown[]) =>
-    effected(() => {
+  ) => Effected<Default<Unresumable<Effect<Name, Payloads, never>>, R | T, F>, never>
+: (...payloads: Payloads) => Effected<Default<Effect<Name, Payloads, R>, T, F>, R>;
+export function effect<
+  Name extends string | symbol,
+  Payloads extends unknown[] = never,
+  R = never,
+  T = never,
+  F extends Effect = never,
+  Resumable extends boolean = true,
+>(
+  name: Name,
+  options?: {
+    readonly resumable?: Resumable;
+    readonly defaultHandler?: [Resumable] extends [false] ?
+      (
+        {
+          effect,
+          terminate,
+        }: { effect: Effect<Name, Payloads, never>; terminate: (value: T) => void },
+        ...payloads: Payloads
+        // TODO: Define a type alias to reduce repetition
+      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    : (
+        {
+          effect,
+          resume,
+          terminate,
+        }: {
+          effect: Effect<Name, Payloads, R>;
+          resume: (value: R) => void;
+          terminate: (value: T) => void;
+        },
+        ...payloads: Payloads
+        // TODO: Define a type alias to reduce repetition
+      ) => void | Generator<F, void, unknown> | Effected<F, void>;
+  },
+): [Resumable] extends [false] ?
+  [Payloads] extends [never] ?
+    <Payloads extends unknown[], R extends never = never>(
+      ...payloads: Payloads
+    ) => Effected<Unresumable<Effect<Name, Payloads, R>>, R>
+  : (
+      ...payloads: Payloads
+    ) => Effected<Default<Unresumable<Effect<Name, Payloads, never>>, R | T, F>, never>
+: [Payloads] extends [never] ?
+  <Payloads extends unknown[], R>(...payloads: Payloads) => Effected<Effect<Name, Payloads, R>, R>
+: (...payloads: Payloads) => Effected<Default<Effect<Name, Payloads, R>, T, F>, R>;
+export function effect(...args: unknown[]): any {
+  if (args.length === 0) return effect;
+  const [name, options = {}] = args as [
+    name: string | symbol,
+    options?: {
+      resumable?: boolean;
+      defaultHandler?: (context: any, ...args: unknown[]) => unknown;
+    },
+  ];
+  const result = (...payloads: unknown[]) => {
+    const defaultHandler =
+      options.defaultHandler &&
+      ((context: any, ...payloads: unknown[]) => options.defaultHandler!(context, ...payloads));
+    return effected(() => {
       let state = 0;
       return {
         next: (...args) => {
@@ -50,10 +136,10 @@ export function effect<Name extends string | symbol, Resumable extends boolean =
               state++;
               return {
                 done: false,
-                value:
-                  options && options.resumable === false ?
-                    Object.assign(new Effect(name, payloads), { resumable: false })
-                  : new Effect(name, payloads),
+                value: Object.assign(new Effect(name, payloads), {
+                  ...(options.resumable === false ? { resumable: false } : {}),
+                  ...(defaultHandler ? { defaultHandler } : {}),
+                }),
               };
             case 1:
               state++;
@@ -67,7 +153,8 @@ export function effect<Name extends string | symbol, Resumable extends boolean =
         },
       };
     });
-  if (options && (options as any)._overrideFunctionName === false) return result as never;
+  };
+  if ((options as any)._overrideFunctionName === false) return result as never;
   return renameFunction(
     result,
     typeof name === "string" ? name : name.toString().slice(7, -1) || "",
@@ -145,11 +232,42 @@ type ErrorName<E extends Effect> =
  *
  * @see {@link effect}
  */
-export function dependency<Name extends string>(
+export function dependency<T>(): <Name extends string, F extends Effect = never>(
   name: Name,
-): <R>() => Effected<Effect<`dependency:${Name}`, [], R>, R> {
+  defaultFactory?: () => T | Generator<F, T, unknown> | Effected<F, T>,
+) => () => Effected<Default<Effect<`dependency:${Name}`, [], T>, F>, T>;
+export function dependency<Name extends string, D = never>(
+  name: Name,
+  defaultFactory?: () => D,
+): [D] extends [never] ? <R>() => Effected<Effect<`dependency:${Name}`, [], R>, R>
+: (
+  D extends Generator<Effect, infer R, unknown> ? R
+  : D extends Effected<Effect, infer R> ? R
+  : D
+) extends infer R ?
+  () => Effected<
+    Default<
+      Effect<`dependency:${Name}`, [], R>,
+      D extends Generator<infer E extends Effect, unknown, unknown> ? E
+      : D extends Effected<infer E, unknown> ? E
+      : never
+    >,
+    R
+  >
+: never;
+export function dependency(...args: unknown[]): any {
+  if (args.length === 0) return dependency;
+  const [name, defaultFactory] = args as [name: string, defaultFactory?: () => unknown];
+  const defaultHandler =
+    defaultFactory &&
+    (({ resume }: any) => {
+      resume(defaultFactory());
+    });
   return renameFunction(
-    effect(`dependency:${name}`, { _overrideFunctionName: false } as {}),
+    effect(`dependency:${name}`, {
+      _overrideFunctionName: false,
+      ...(typeof defaultFactory === "function" ? { defaultHandler } : {}),
+    } as {}),
     `ask${capitalize(name)}`,
   );
 }
@@ -203,16 +321,45 @@ export function defineHandlerFor() {
   };
 }
 
+type ExtractUnhandled<E extends Effect> =
+  E extends { readonly defaultHandler: (context: any) => Effected<infer F, unknown> } ?
+    ExtractUnhandled<F>
+  : E;
+type ExtractEffect<E extends Effect, Acc = never> =
+  E extends { readonly defaultHandler: (context: any) => Effected<infer F, unknown> } ?
+    [F] extends [never] ?
+      Acc | E
+    : ExtractEffect<F, Acc | E>
+  : Acc | E;
+type ExcludeEffect<E extends Effect, F extends Effect> =
+  E extends F ? never
+  : E extends Default<infer E, infer T, infer G> ? Default<E, T, ExcludeEffect<G, F>>
+  : E;
+type ExtractDefaultTerminateType<E extends Effect> =
+  E extends (
+    {
+      defaultHandler: (context: {
+        terminate: (value: infer T) => void;
+      }) => Effected<Effect, unknown>;
+    }
+  ) ?
+    T
+  : never;
+
 /**
  * An effected program.
  */
 export class Effected<out E extends Effect, out R> implements Iterable<E, R, unknown> {
   declare public readonly [Symbol.iterator]: () => Iterator<E, R, unknown>;
 
-  declare public readonly runSync: [E] extends [never] ? () => R : UnhandledEffect<E>;
-  declare public readonly runAsync: [E] extends [never] ? () => Promise<R> : UnhandledEffect<E>;
-  declare public readonly runSyncUnsafe: () => R;
-  declare public readonly runAsyncUnsafe: () => Promise<R>;
+  declare public readonly runSync: [ExtractUnhandled<E>] extends [never] ?
+    () => ExtractDefaultTerminateType<E> | R
+  : UnhandledEffect<ExtractUnhandled<E>>;
+  declare public readonly runAsync: [ExtractUnhandled<E>] extends [never] ?
+    () => Promise<ExtractDefaultTerminateType<E> | R>
+  : UnhandledEffect<ExtractUnhandled<E>>;
+  declare public readonly runSyncUnsafe: () => ExtractDefaultTerminateType<E> | R;
+  declare public readonly runAsyncUnsafe: () => Promise<ExtractDefaultTerminateType<E> | R>;
 
   private constructor(fn: () => Iterator<E, R, unknown>, magicWords?: string) {
     if (magicWords !== "Yes, I’m sure I want to call the constructor of Effected directly.")
@@ -493,52 +640,60 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * required to call them synchronously.
    * @returns
    */
-  handle<Name extends E["name"], T = R, F extends Effect = never>(
+  handle<Name extends ExtractEffect<E>["name"], T = R, F extends Effect = never>(
     effect: Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-        // TODO: Define a type alias to reduce repetition
-        // eslint-disable-next-line sonarjs/use-type-alias
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Unresumable<Effect<Name, infer Payloads>> ?
+        (
+          {
+            effect,
+            terminate,
+          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : E extends Effect<Name, infer Payloads, infer R> ?
+        (
+          {
+            effect,
+            resume,
+            terminate,
+          }: {
+            effect: Extract<E, Effect<Name>>;
+            resume: (value: R) => void;
+            terminate: (value: T) => void;
+          },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : never
     : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
+  ): Effected<ExcludeEffect<E, Effect<Name>> | F, R | T>;
   handle<Name extends string | symbol, T = R, F extends Effect = never>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    effect: (name: ExtractEffect<E>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Unresumable<Effect<Name, infer Payloads>> ?
+        (
+          {
+            effect,
+            terminate,
+          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : E extends Effect<Name, infer Payloads, infer R> ?
+        (
+          {
+            effect,
+            resume,
+            terminate,
+          }: {
+            effect: Extract<E, Effect<Name>>;
+            resume: (value: R) => void;
+            terminate: (value: T) => void;
+          },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : never
     : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
+  ): Effected<ExcludeEffect<E, Effect<Name>> | F, R | T>;
   handle(
     name: string | symbol | ((name: string | symbol) => boolean),
     handler: (...args: any[]) => unknown,
@@ -549,132 +704,41 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
 
     return effected(() => {
       const iterator = this[Symbol.iterator]();
-      let interceptIterator: typeof iterator | null = null;
-      let terminated: false | "with-value" | "without-value" = false;
-      let terminatedValue: unknown;
+      const context = {
+        interceptIterator: null as typeof iterator | null,
+        // eslint-disable-next-line sonarjs/use-type-alias
+        terminated: false as false | "with-value" | "without-value",
+        terminatedValue: undefined as unknown,
+      };
 
       return {
         next: (...args: [] | [unknown]) => {
-          if (terminated)
+          if (context.terminated)
             return {
               done: true,
-              ...(terminated === "with-value" ? { value: terminatedValue } : {}),
+              ...(context.terminated === "with-value" ? { value: context.terminatedValue } : {}),
             } as IteratorReturnResult<unknown>;
 
-          const result = (interceptIterator || iterator).next(...args);
+          const result = (context.interceptIterator || iterator).next(...args);
 
           const { done, value } = result;
           if (done) return result;
 
-          if (matchEffect(value)) {
-            const effect = value;
+          if (matchEffect(value)) return handleEffect(context, name, value, handler as never);
 
-            let resumed: false | "with-value" | "without-value" = false;
-            let resumedValue: R;
-            let onComplete: ((...args: [] | [R]) => void) | null = null;
-            const warnMultipleHandling = (type: "resume" | "terminate", ...args: [] | [R]) => {
-              let message = `Effect ${stringifyEffectNameQuoted(name)} has been handled multiple times`;
-              message += " (received `";
-              message += `${type} ${stringifyEffect(effect)}`;
-              if (args.length > 0) message += ` with ${stringify(args[0])}`;
-              message += "` after it has been ";
-              if (resumed) {
-                message += "resumed";
-                if (resumed === "with-value") message += ` with ${stringify(resumedValue)}`;
-              } else if (terminated) {
-                message += "terminated";
-                if (terminated === "with-value") message += ` with ${stringify(terminatedValue)}`;
+          if (value instanceof Effect && typeof (value as any).defaultHandler === "function") {
+            const originalDefaultHandler = (value as any).defaultHandler;
+            (value as any).defaultHandler = (context: any, ...payloads: unknown[]) => {
+              const result = originalDefaultHandler(context, ...payloads);
+              if (result instanceof Effected) return result.handle(name as never, handler as never);
+              if (isGenerator(result)) {
+                return effected(() => result as Generator<Effect, unknown, unknown>).handle(
+                  name as never,
+                  handler as never,
+                );
               }
-              message += "). Only the first handler will be used.";
-              logger.warn(message);
+              return result;
             };
-            const resume = (...args: [] | [R]) => {
-              if (resumed || terminated) {
-                warnMultipleHandling("resume", ...args);
-                return;
-              }
-              resumed = args.length > 0 ? "with-value" : "without-value";
-              if (args.length > 0) resumedValue = args[0]!;
-              if (onComplete) {
-                onComplete(...args);
-                onComplete = null;
-              }
-            };
-            const terminate = (...args: [] | [R]) => {
-              if (resumed || terminated) {
-                warnMultipleHandling("terminate", ...args);
-                return;
-              }
-              terminated = args.length > 0 ? "with-value" : "without-value";
-              if (args.length > 0) terminatedValue = args[0];
-              if (onComplete) {
-                onComplete(...args);
-                onComplete = null;
-              }
-            };
-
-            const constructHandledEffect = ():
-              | { _effectSync: true; value?: unknown }
-              | {
-                  _effectAsync: true;
-                  onComplete: (callback: (...args: [] | [R]) => void) => void;
-                } => {
-              // For synchronous effects
-              if (resumed || terminated)
-                return {
-                  _effectSync: true,
-                  ...(Object.is(resumed, "with-value") ? { value: resumedValue! }
-                  : Object.is(terminated, "with-value") ? { value: terminatedValue! }
-                  : {}),
-                };
-              // For asynchronous effects
-              const handledEffect: ReturnType<typeof constructHandledEffect> = {
-                _effectAsync: true,
-                onComplete: (callback) => {
-                  onComplete = callback;
-                },
-              };
-              if ((effect as any).interruptable)
-                (handledEffect as any).interruptable = (effect as any).interruptable;
-              return handledEffect;
-            };
-
-            const handlerResult = handler(
-              {
-                effect,
-                resume:
-                  (effect as any).resumable === false ?
-                    () => {
-                      throw new Error(
-                        `Cannot resume non-resumable effect: ${stringifyEffect(effect)}`,
-                      );
-                    }
-                  : resume,
-                terminate,
-              },
-              ...effect.payloads,
-            );
-
-            if (
-              !(handlerResult instanceof Effected) &&
-              !isGenerator(handlerResult) &&
-              !isEffectedIterator(handlerResult)
-            )
-              return { done: false, value: constructHandledEffect() } as never;
-
-            const iter =
-              Symbol.iterator in handlerResult ? handlerResult[Symbol.iterator]() : handlerResult;
-            interceptIterator = {
-              next: (...args: [] | [unknown]) => {
-                const result = iter.next(...args);
-                if (result.done) {
-                  interceptIterator = null;
-                  return { done: false, value: constructHandledEffect() } as never;
-                }
-                return result as never;
-              },
-            };
-            return interceptIterator.next();
           }
 
           return result;
@@ -694,20 +758,27 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    *
    * @see {@link handle}
    */
-  resume<Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
+  resume<
+    Name extends Exclude<ExtractEffect<E>, Unresumable<Effect>>["name"],
+    F extends Effect = never,
+  >(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ?
-      // TODO: Define a type alias to reduce repetition
-      // eslint-disable-next-line sonarjs/use-type-alias
-      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads, infer R> ?
+        // TODO: Define a type alias to reduce repetition
+        // eslint-disable-next-line sonarjs/use-type-alias
+        (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+      : never
     : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R>;
+  ): Effected<ExcludeEffect<E, Effect<Name>> | F, R>;
   resume<Name extends string | symbol, F extends Effect = never>(
-    effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+    effect: (name: Exclude<ExtractEffect<E>, Unresumable<Effect>>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads, infer R> ?
+        (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+      : never
     : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R>;
+  ): Effected<ExcludeEffect<E, Effect<Name>> | F, R>;
   resume(effect: any, handler: (...payloads: unknown[]) => unknown) {
     return this.handle(effect, (({ resume }: any, ...payloads: unknown[]) => {
       const it = handler(...payloads);
@@ -735,26 +806,38 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    *
    * @see {@link handle}
    */
-  terminate<Name extends E["name"], T, F extends Effect = never>(
+  terminate<Name extends ExtractEffect<E>["name"], T, F extends Effect = never>(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads> ?
-      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+      : never
     : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
+  ): Effected<ExcludeEffect<E, Effect<Name>> | F, R | T>;
   terminate<Name extends string | symbol, T, F extends Effect = never>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads> ?
-      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+    effect: (name: ExtractEffect<E>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+      : never
     : never,
-  ): Effected<Exclude<E, Effect<Name>> | F, R | T>;
-  terminate<Name extends E["name"], T>(
+  ): Effected<ExcludeEffect<E, Effect<Name>> | F, R | T>;
+  terminate<Name extends ExtractEffect<E>["name"], T>(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
-  ): Effected<Exclude<E, Effect<Name>>, R | T>;
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => T
+      : never
+    : never,
+  ): Effected<ExcludeEffect<E, Effect<Name>>, R | T>;
   terminate<Name extends string | symbol, T>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
-  ): Effected<Exclude<E, Effect<Name>>, R | T>;
+    effect: (name: ExtractEffect<E>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => T
+      : never
+    : never,
+  ): Effected<ExcludeEffect<E, Effect<Name>>, R | T>;
   terminate(effect: any, handler: (...payloads: unknown[]) => unknown) {
     return this.handle(effect, (({ terminate }: any, ...payloads: unknown[]) => {
       const it = handler(...payloads);
@@ -908,14 +991,14 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    *
    * @see {@link terminate}
    */
-  catch<Name extends ErrorName<E>, T, F extends Effect = never>(
+  catch<Name extends ErrorName<ExtractEffect<E>>, T, F extends Effect = never>(
     effect: Name,
     handler: (message?: string) => Generator<F, T, unknown> | Effected<F, T>,
-  ): Effected<Exclude<E, Effect.Error<Name>> | F, R | T>;
-  catch<Name extends ErrorName<E>, T>(
+  ): Effected<ExcludeEffect<E, Effect.Error<Name>> | F, R | T>;
+  catch<Name extends ErrorName<ExtractEffect<E>>, T>(
     effect: Name,
     handler: (message?: string) => T,
-  ): Effected<Exclude<E, Effect.Error<Name>>, R | T>;
+  ): Effected<ExcludeEffect<E, Effect.Error<Name>>, R | T>;
   catch(name: string, handler: (message?: string) => unknown): Effected<Effect, unknown> {
     return this.terminate(`error:${name}` as never, handler as never);
   }
@@ -926,16 +1009,21 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * effect (without the `"error:"` prefix), and the second argument is the message of the error.
    */
   catchAll<T, F extends Effect = never>(
-    handler: (error: ErrorName<E>, message?: string) => Generator<F, T, unknown> | Effected<F, T>,
-  ): Effected<Exclude<E, Effect.Error> | F, R | T>;
+    handler: (
+      error: ErrorName<ExtractEffect<E>>,
+      message?: string,
+    ) => Generator<F, T, unknown> | Effected<F, T>,
+  ): Effected<ExcludeEffect<E, Effect.Error> | F, R | T>;
   catchAll<T>(
-    handler: (error: ErrorName<E>, message?: string) => T,
-  ): Effected<Exclude<E, Effect.Error>, R | T>;
-  catchAll(handler: (error: ErrorName<E>, message?: string) => unknown): Effected<Effect, unknown> {
+    handler: (error: ErrorName<ExtractEffect<E>>, message?: string) => T,
+  ): Effected<ExcludeEffect<E, Effect.Error>, R | T>;
+  catchAll(
+    handler: (error: ErrorName<ExtractEffect<E>>, message?: string) => unknown,
+  ): Effected<Effect, unknown> {
     return this.handle(
       (name): name is ErrorName<E> => typeof name === "string" && name.startsWith("error:"),
       (({ effect, terminate }: any, ...payloads: [message?: string]) => {
-        const error = effect.name.slice(6) as ErrorName<E>;
+        const error = effect.name.slice(6) as ErrorName<ExtractEffect<E>>;
         const it = handler(error, ...payloads);
         if (!(it instanceof Effected) && !isGenerator(it)) return terminate(it);
         const iterator = it[Symbol.iterator]();
@@ -960,10 +1048,10 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    *
    * @since 0.1.1
    */
-  catchAndThrow<Name extends ErrorName<E>>(
+  catchAndThrow<Name extends ErrorName<ExtractEffect<E>>>(
     name: Name,
     message?: string | ((message?: string) => string | undefined),
-  ): Effected<Exclude<E, Effect.Error<Name>>, R> {
+  ): Effected<ExcludeEffect<E, Effect.Error<Name>>, R> {
     return this.catch(name, (...args) => {
       throw new (buildErrorClass(name))(
         ...(typeof message === "string" ? [message]
@@ -984,7 +1072,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    */
   catchAllAndThrow(
     message?: string | ((error: string, message?: string) => string | undefined),
-  ): Effected<Exclude<E, Effect.Error>, R> {
+  ): Effected<ExcludeEffect<E, Effect.Error>, R> {
     return this.catchAll((error, ...args) => {
       throw new (buildErrorClass(error))(
         ...(typeof message === "string" ? [message]
@@ -1000,10 +1088,10 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * @param value The value to provide for the dependency.
    * @returns
    */
-  provide<Name extends DependencyName<E>>(
+  provide<Name extends DependencyName<ExtractEffect<E>>>(
     name: Name,
     value: E extends Effect.Dependency<Name, infer R> ? R : never,
-  ): Effected<Exclude<E, Effect.Dependency<Name>>, R> {
+  ): Effected<ExcludeEffect<E, Effect.Dependency<Name>>, R> {
     return this.resume(`dependency:${name}` as never, (() => value) as never) as never;
   }
 
@@ -1013,12 +1101,12 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    * @param getter The getter to provide for the dependency.
    * @returns
    */
-  provideBy<Name extends DependencyName<E>, F extends Effect = never>(
+  provideBy<Name extends DependencyName<ExtractEffect<E>>, F extends Effect = never>(
     name: Name,
     getter: E extends Effect.Dependency<Name, infer R> ?
       () => R | Generator<F, R, unknown> | Effected<F, R>
     : never,
-  ): Effected<Exclude<E, Effect.Dependency<Name>> | F, R> {
+  ): Effected<ExcludeEffect<E, Effect.Dependency<Name>> | F, R> {
     return this.resume(`dependency:${name}`, getter as never) as never;
   }
 
@@ -1029,7 +1117,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
    */
   with<F extends Effect, G extends Effect, S>(
     handler: (effected: EffectedDraft<never, never, R>) => EffectedDraft<F, G, S>,
-  ): Effected<Exclude<E, F> | G, S>;
+  ): Effected<ExcludeEffect<E, F> | G, S>;
   with<F extends Effect, S>(handler: (effected: Effected<E, R>) => Effected<F, S>): Effected<F, S>;
   with(handler: (effected: any) => unknown) {
     return handler(this);
@@ -1041,84 +1129,110 @@ interface EffectedDraft<
   out E extends Effect = Effect,
   out R = unknown,
 > extends Iterable<E, R, unknown> {
-  handle<Name extends E["name"], T = R, F extends Effect = never>(
+  handle<Name extends ExtractEffect<E>["name"], T = R, F extends Effect = never>(
     effect: Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Unresumable<Effect<Name, infer Payloads>> ?
+        (
+          {
+            effect,
+            terminate,
+          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : E extends Effect<Name, infer Payloads, infer R> ?
+        (
+          {
+            effect,
+            resume,
+            terminate,
+          }: {
+            effect: Extract<E, Effect<Name>>;
+            resume: (value: R) => void;
+            terminate: (value: T) => void;
+          },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : never
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>> | F, R | T>;
   handle<Name extends string | symbol, T = R, F extends Effect = never>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Unresumable<Effect<Name, infer Payloads>> ?
-      (
-        { effect, terminate }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
-    : E extends Effect<Name, infer Payloads, infer R> ?
-      (
-        {
-          effect,
-          resume,
-          terminate,
-        }: {
-          effect: Extract<E, Effect<Name>>;
-          resume: (value: R) => void;
-          terminate: (value: T) => void;
-        },
-        ...payloads: Payloads
-      ) => void | Generator<F, void, unknown> | Effected<F, void>
+    effect: (name: ExtractEffect<E>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Unresumable<Effect<Name, infer Payloads>> ?
+        (
+          {
+            effect,
+            terminate,
+          }: { effect: Extract<E, Effect<Name>>; terminate: (value: T) => void },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : E extends Effect<Name, infer Payloads, infer R> ?
+        (
+          {
+            effect,
+            resume,
+            terminate,
+          }: {
+            effect: Extract<E, Effect<Name>>;
+            resume: (value: R) => void;
+            terminate: (value: T) => void;
+          },
+          ...payloads: Payloads
+        ) => void | Generator<F, void, unknown> | Effected<F, void>
+      : never
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>> | F, R | T>;
 
   resume<Name extends Exclude<E, Unresumable<Effect>>["name"], F extends Effect = never>(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads, infer R> ?
+        (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+      : never
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>> | F, R>;
   resume<Name extends string | symbol, F extends Effect = never>(
     effect: (name: Exclude<E, Unresumable<Effect>>["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads, infer R> ?
-      (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads, infer R> ?
+        (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
+      : never
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>> | F, R>;
 
-  terminate<Name extends E["name"], T, F extends Effect = never>(
+  terminate<Name extends ExtractEffect<E>["name"], T, F extends Effect = never>(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads> ?
-      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+      : never
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>> | F, R | T>;
   terminate<Name extends string | symbol, T, F extends Effect = never>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads> ?
-      (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+    effect: (name: ExtractEffect<E>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => Generator<F, T, unknown> | Effected<F, T>
+      : never
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>> | F, R | T>;
-  terminate<Name extends E["name"], T>(
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>> | F, R | T>;
+  terminate<Name extends ExtractEffect<E>["name"], T>(
     effect: Name,
-    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => T
+      : never
+    : never,
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>>, R | T>;
   terminate<Name extends string | symbol, T>(
-    effect: (name: E["name"]) => name is Name,
-    handler: E extends Effect<Name, infer Payloads> ? (...payloads: Payloads) => T : never,
-  ): EffectedDraft<P, Exclude<E, Effect<Name>>, R | T>;
+    effect: (name: ExtractEffect<E>["name"]) => name is Name,
+    handler: ExtractEffect<E> extends infer E ?
+      E extends Effect<Name, infer Payloads> ?
+        (...payloads: Payloads) => T
+      : never
+    : never,
+  ): EffectedDraft<P, ExcludeEffect<E, Effect<Name>>, R | T>;
 
   as<S>(value: S): EffectedDraft<P, E, S>;
   asVoid(): EffectedDraft<P, E, void>;
@@ -1137,45 +1251,48 @@ interface EffectedDraft<
     handler: (value: R) => void | Generator<F, void, unknown> | Effected<F, void>,
   ): EffectedDraft<P, E | F, R>;
 
-  catch<Name extends ErrorName<E>, T, F extends Effect = never>(
+  catch<Name extends ErrorName<ExtractEffect<E>>, T, F extends Effect = never>(
     effect: Name,
     handler: (message?: string) => Generator<F, T, unknown> | Effected<F, T>,
-  ): EffectedDraft<P, Exclude<E, Effect.Error<Name>> | F, R | T>;
-  catch<Name extends ErrorName<E>, T>(
+  ): EffectedDraft<P, ExcludeEffect<E, Effect.Error<Name>> | F, R | T>;
+  catch<Name extends ErrorName<ExtractEffect<E>>, T>(
     effect: Name,
     handler: (message?: string) => T,
-  ): EffectedDraft<P, Exclude<E, Effect.Error<Name>>, R | T>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect.Error<Name>>, R | T>;
 
   catchAll<T, F extends Effect = never>(
-    handler: (effect: ErrorName<E>, message?: string) => Generator<F, T, unknown> | Effected<F, T>,
-  ): Effected<Exclude<E, Effect.Error> | F, R | T>;
+    handler: (
+      effect: ErrorName<ExtractEffect<E>>,
+      message?: string,
+    ) => Generator<F, T, unknown> | Effected<F, T>,
+  ): Effected<ExcludeEffect<E, Effect.Error> | F, R | T>;
   catchAll<T>(
-    handler: (effect: ErrorName<E>, message?: string) => T,
-  ): Effected<Exclude<E, Effect.Error>, R | T>;
+    handler: (effect: ErrorName<ExtractEffect<E>>, message?: string) => T,
+  ): Effected<ExcludeEffect<E, Effect.Error>, R | T>;
 
-  readonly catchAndThrow: <Name extends ErrorName<E>>(
+  readonly catchAndThrow: <Name extends ErrorName<ExtractEffect<E>>>(
     name: Name,
     message?: string | ((message?: string) => string | undefined),
-  ) => Effected<Exclude<E, Effect.Error<Name>>, R>;
+  ) => Effected<ExcludeEffect<E, Effect.Error<Name>>, R>;
 
   readonly catchAllAndThrow: (
     message?: string | ((error: string, message?: string) => string | undefined),
-  ) => Effected<Exclude<E, Effect.Error>, R>;
+  ) => Effected<ExcludeEffect<E, Effect.Error>, R>;
 
-  readonly provide: <Name extends DependencyName<E>>(
+  readonly provide: <Name extends DependencyName<ExtractEffect<E>>>(
     name: Name,
     value: E extends Effect.Dependency<Name, infer R> ? R : never,
-  ) => EffectedDraft<P, Exclude<E, Effect.Dependency<Name>>, R>;
-  provideBy<Name extends DependencyName<E>, F extends Effect = never>(
+  ) => EffectedDraft<P, ExcludeEffect<E, Effect.Dependency<Name>>, R>;
+  provideBy<Name extends DependencyName<ExtractEffect<E>>, F extends Effect = never>(
     name: Name,
     getter: E extends Effect.Dependency<Name, infer R> ?
       () => R | Generator<F, R, unknown> | Effected<F, R>
     : never,
-  ): EffectedDraft<P, Exclude<E, Effect.Dependency<Name>> | F, R>;
+  ): EffectedDraft<P, ExcludeEffect<E, Effect.Dependency<Name>> | F, R>;
 
   with<F extends Effect, G extends Effect, S>(
     handler: (effected: EffectedDraft<never, never, R>) => EffectedDraft<F, G, S>,
-  ): EffectedDraft<P, Exclude<E, F> | G, S>;
+  ): EffectedDraft<P, ExcludeEffect<E, F> | G, S>;
   with<F extends Effect, S>(
     handler: (effected: Effected<E, R>) => Effected<F, S>,
   ): EffectedDraft<P, F, S>;
@@ -1306,28 +1423,46 @@ export function effectify<T>(promise: Promise<T>): Effected<never, T> {
  */
 export function runSync<E extends Effected<Effect, unknown>>(
   effected: E extends Effected<infer F extends Effect, unknown> ?
-    [F] extends [never] ?
+    [ExtractUnhandled<F>] extends [never] ?
       E
-    : UnhandledEffect<F>
+    : UnhandledEffect<ExtractUnhandled<F>>
   : never,
-): E extends Effected<Effect, infer R> ? R : never {
+): E extends Effected<infer F, infer R> ? ExtractDefaultTerminateType<F> | R : never {
   const iterator = (effected as Iterable<any>)[Symbol.iterator]();
-  let { done, value } = iterator.next();
+  const context = {
+    interceptIterator: null as typeof iterator | null,
+    terminated: false as false | "with-value" | "without-value",
+    terminatedValue: undefined as unknown,
+  };
+
+  let { done, value } = (context.interceptIterator || iterator).next();
   while (!done) {
+    if (context.terminated) return context.terminatedValue as never;
+
     if (!value)
       throw new Error(
         `Invalid effected program: an effected program should yield only effects (received ${stringify(value)})`,
       );
+    if (value instanceof Effect) {
+      while (value instanceof Effect && typeof (value as any).defaultHandler === "function") {
+        value = handleEffect(context, effect.name, value, (value as any).defaultHandler).value;
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        if (context.terminated) return context.terminatedValue as never;
+      }
+      if (value instanceof Effect)
+        throw new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`);
+    }
     if (value._effectSync) {
-      ({ done, value } = iterator.next(...("value" in value ? [value.value] : [])));
+      ({ done, value } = (context.interceptIterator || iterator).next(
+        ...("value" in value ? [value.value] : []),
+      ));
       continue;
     }
     if (value._effectAsync)
       throw new Error(
         "Cannot run an asynchronous effected program with `runSync`, use `runAsync` instead",
       );
-    if (value instanceof Effect)
-      throw new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`);
+
     throw new Error(
       `Invalid effected program: an effected program should yield only effects (received ${stringify(value)})`,
     );
@@ -1344,19 +1479,26 @@ export function runSync<E extends Effected<Effect, unknown>>(
  */
 export function runAsync<E extends Effected<Effect, unknown>>(
   effected: E extends Effected<infer F extends Effect, unknown> ?
-    [F] extends [never] ?
+    [ExtractUnhandled<F>] extends [never] ?
       E
-    : UnhandledEffect<F>
+    : UnhandledEffect<ExtractUnhandled<F>>
   : never,
-): Promise<E extends Effected<Effect, infer R> ? R : never> {
+): Promise<E extends Effected<infer F, infer R> ? ExtractDefaultTerminateType<F> | R : never> {
   const iterator = (effected as Iterable<any>)[Symbol.iterator]();
+  const context = {
+    interceptIterator: null as typeof iterator | null,
+    terminated: false as false | "with-value" | "without-value",
+    terminatedValue: undefined as unknown,
+  };
 
   return new Promise((resolve, reject) => {
     const iterate = (...args: [] | [unknown]) => {
+      if (context.terminated) return context.terminatedValue;
+
       let done: boolean | undefined;
       let value: any;
       try {
-        ({ done, value } = iterator.next(...args));
+        ({ done, value } = (context.interceptIterator || iterator).next(...args));
       } catch (e) {
         // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
         reject(e);
@@ -1373,9 +1515,22 @@ export function runAsync<E extends Effected<Effect, unknown>>(
           );
           return;
         }
+        if (value instanceof Effect) {
+          while (value instanceof Effect && typeof (value as any).defaultHandler === "function") {
+            value = handleEffect(context, effect.name, value, (value as any).defaultHandler).value;
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+            if (context.terminated) return context.terminatedValue;
+          }
+          if (value instanceof Effect) {
+            reject(new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`));
+            return;
+          }
+        }
         if (value._effectSync) {
           try {
-            ({ done, value } = iterator.next(...("value" in value ? [value.value] : [])));
+            ({ done, value } = (context.interceptIterator || iterator).next(
+              ...("value" in value ? [value.value] : []),
+            ));
           } catch (e) {
             // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
             reject(e);
@@ -1389,7 +1544,7 @@ export function runAsync<E extends Effected<Effect, unknown>>(
             const promise = new Promise((_resolve) => (resolve = _resolve));
             // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
             value.onComplete(resolve, (...args: unknown[]) => reject(...args.slice(0, 1)));
-            ({ done, value } = iterator.next({
+            ({ done, value } = (context.interceptIterator || iterator).next({
               _effectInterrupt: value.interruptable,
               with: promise,
             }));
@@ -1399,10 +1554,6 @@ export function runAsync<E extends Effected<Effect, unknown>>(
             value.onComplete(iterate, (...args: unknown[]) => reject(...args.slice(0, 1)));
             return;
           }
-        }
-        if (value instanceof Effect) {
-          reject(new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`));
-          return;
         }
         reject(
           new Error(
@@ -1422,6 +1573,141 @@ export function runAsync<E extends Effected<Effect, unknown>>(
 /*********************
  * Utility functions *
  *********************/
+/**
+ * Handle an effect with a handler.
+ * @param context The context.
+ * @param effect The effect to handle.
+ * @param handler The handler for the effect.
+ * @returns
+ */
+const handleEffect = <E extends Effect, R>(
+  context: {
+    terminated: false | "with-value" | "without-value";
+    terminatedValue: R | undefined;
+    interceptIterator: Iterator<E, R, unknown> | null;
+  },
+  // eslint-disable-next-line sonarjs/use-type-alias
+  effectName: string | symbol | ((...args: never) => unknown),
+  effect: E,
+  handler: (
+    {
+      effect,
+      resume,
+      terminate,
+    }: {
+      effect: Effect;
+      resume: (value: R) => void;
+      terminate: (value: R) => void;
+    },
+    ...payloads: unknown[]
+  ) => void | Generator<Effect, void, unknown> | Effected<Effect, void>,
+): IteratorResult<E, R> => {
+  let resumed: false | "with-value" | "without-value" = false;
+  let resumedValue: R;
+  let onComplete: ((...args: [] | [R]) => void) | null = null;
+  const warnMultipleHandling = (type: "resume" | "terminate", ...args: [] | [R]) => {
+    let message = `Effect ${stringifyEffectNameQuoted(effectName)} has been handled multiple times`;
+    message += " (received `";
+    message += `${type} ${stringifyEffect(effect)}`;
+    if (args.length > 0) message += ` with ${stringify(args[0])}`;
+    message += "` after it has been ";
+    if (resumed) {
+      message += "resumed";
+      if (resumed === "with-value") message += ` with ${stringify(resumedValue)}`;
+    } else if (context.terminated) {
+      message += "terminated";
+      if (context.terminated === "with-value")
+        message += ` with ${stringify(context.terminatedValue)}`;
+    }
+    message += "). Only the first handler will be used.";
+    logger.warn(message);
+  };
+  const resume = (...args: [] | [R]) => {
+    if (resumed || context.terminated) {
+      warnMultipleHandling("resume", ...args);
+      return;
+    }
+    resumed = args.length > 0 ? "with-value" : "without-value";
+    if (args.length > 0) resumedValue = args[0]!;
+    if (onComplete) {
+      onComplete(...args);
+      onComplete = null;
+    }
+  };
+  const terminate = (...args: [] | [R]) => {
+    if (resumed || context.terminated) {
+      warnMultipleHandling("terminate", ...args);
+      return;
+    }
+    context.terminated = args.length > 0 ? "with-value" : "without-value";
+    if (args.length > 0) context.terminatedValue = args[0];
+    if (onComplete) {
+      onComplete(...args);
+      onComplete = null;
+    }
+  };
+
+  const constructHandledEffect = ():
+    | { _effectSync: true; value?: unknown }
+    | {
+        _effectAsync: true;
+        onComplete: (callback: (...args: [] | [R]) => void) => void;
+      } => {
+    // For synchronous effects
+    if (resumed || context.terminated)
+      return {
+        _effectSync: true,
+        ...(Object.is(resumed, "with-value") ? { value: resumedValue! }
+        : Object.is(context.terminated, "with-value") ? { value: context.terminatedValue! }
+        : {}),
+      };
+    // For asynchronous effects
+    const handledEffect: ReturnType<typeof constructHandledEffect> = {
+      _effectAsync: true,
+      onComplete: (callback) => {
+        onComplete = callback;
+      },
+    };
+    if ((effect as any).interruptable)
+      (handledEffect as any).interruptable = (effect as any).interruptable;
+    return handledEffect;
+  };
+
+  const handlerResult = handler(
+    {
+      effect,
+      resume:
+        (effect as any).resumable === false ?
+          () => {
+            throw new Error(`Cannot resume non-resumable effect: ${stringifyEffect(effect)}`);
+          }
+        : resume,
+      terminate,
+    },
+    ...effect.payloads,
+  );
+
+  if (
+    !(handlerResult instanceof Effected) &&
+    !isGenerator(handlerResult) &&
+    !isEffectedIterator(handlerResult)
+  )
+    return { done: false, value: constructHandledEffect() } as never;
+
+  const iter = Symbol.iterator in handlerResult ? handlerResult[Symbol.iterator]() : handlerResult;
+  context.interceptIterator = {
+    next: (...args: [] | [unknown]) => {
+      const result = iter.next(...args);
+      if (result.done) {
+        context.interceptIterator = null;
+        return { done: false, value: constructHandledEffect() } as never;
+      }
+      return result as never;
+    },
+  };
+  return context.interceptIterator.next();
+};
+
 /**
  * Check if a value is a {@link Generator}.
  * @param value The value to check.
