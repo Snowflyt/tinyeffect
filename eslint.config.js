@@ -122,6 +122,7 @@ export default tseslint.config(
       "sonarjs/redundant-type-aliases": "off", // Already covered by `@typescript-eslint/no-restricted-type-imports`
       "sonarjs/regex-complexity": "off",
       "sonarjs/todo-tag": "off",
+      "sonarjs/use-type-alias": "off",
       "sonarjs/void-use": "off",
       "sort-destructure-keys/sort-destructure-keys": "error",
       "sort-imports": ["error", { ignoreDeclarationSort: true }],
@@ -132,7 +133,6 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/ban-ts-comment": "off",
       "require-yield": "off",
-      "sonarjs/use-type-alias": "off",
     },
   },
 );

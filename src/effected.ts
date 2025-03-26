@@ -47,8 +47,6 @@ export function effect<Payloads extends unknown[], R, T = never>(): <
           terminate,
         }: { effect: Effect<Name, Payloads, never>; terminate: (value: T) => void },
         ...payloads: Payloads
-        // TODO: Define a type alias to reduce repetition
-        // eslint-disable-next-line sonarjs/use-type-alias
       ) => void | Generator<F, void, unknown> | Effected<F, void>
     : (
         {
@@ -61,7 +59,6 @@ export function effect<Payloads extends unknown[], R, T = never>(): <
           terminate: (value: T) => void;
         },
         ...payloads: Payloads
-        // TODO: Define a type alias to reduce repetition
       ) => void | Generator<F, void, unknown> | Effected<F, void>;
   },
 ) => [Resumable] extends [false] ?
@@ -87,7 +84,6 @@ export function effect<
           terminate,
         }: { effect: Effect<Name, Payloads, never>; terminate: (value: T) => void },
         ...payloads: Payloads
-        // TODO: Define a type alias to reduce repetition
       ) => void | Generator<F, void, unknown> | Effected<F, void>
     : (
         {
@@ -100,7 +96,6 @@ export function effect<
           terminate: (value: T) => void;
         },
         ...payloads: Payloads
-        // TODO: Define a type alias to reduce repetition
       ) => void | Generator<F, void, unknown> | Effected<F, void>;
   },
 ): [Resumable] extends [false] ?
@@ -706,7 +701,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
       const iterator = this[Symbol.iterator]();
       const context = {
         interceptIterator: null as typeof iterator | null,
-        // eslint-disable-next-line sonarjs/use-type-alias
+
         terminated: false as false | "with-value" | "without-value",
         terminatedValue: undefined as unknown,
       };
@@ -765,8 +760,6 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
     effect: Name,
     handler: ExtractEffect<E> extends infer E ?
       E extends Effect<Name, infer Payloads, infer R> ?
-        // TODO: Define a type alias to reduce repetition
-        // eslint-disable-next-line sonarjs/use-type-alias
         (...payloads: Payloads) => R | Generator<F, R, unknown> | Effected<F, R>
       : never
     : never,
@@ -1586,7 +1579,7 @@ const handleEffect = <E extends Effect, R>(
     terminatedValue: R | undefined;
     interceptIterator: Iterator<E, R, unknown> | null;
   },
-  // eslint-disable-next-line sonarjs/use-type-alias
+
   effectName: string | symbol | ((...args: never) => unknown),
   effect: E,
   handler: (
