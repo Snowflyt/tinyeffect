@@ -2,7 +2,7 @@
 
 import { expect, test, vi } from "vitest";
 
-import type { Effect, EffectFactory, Unresumable } from "../src";
+import type { Default, Effect, EffectFactory, Unresumable } from "../src";
 import {
   Effected,
   UnhandledEffectError,
@@ -1365,7 +1365,7 @@ test("Parallel execution with `Effected.all`", async () => {
   }
 });
 
-test("Effects without generators (Pipeline syntax)", () => {
+test("Effects without generators (Pipeline syntax)", async () => {
   {
     const fib1 = (n: number): Effected<never, number> =>
       effected(function* () {
@@ -1502,6 +1502,35 @@ test("Effects without generators (Pipeline syntax)", () => {
         .provide("theme", "dark")
         .runSync(),
     ).toBe("Welcome Alice! Using dark theme.");
+  }
+
+  // Test `.pipe(...fs)`
+  {
+    const delay =
+      (ms: number) =>
+      <E extends Effect, R>(
+        effected: Effected<E, R>,
+      ): Effected<E | Default<Effect<"delay", [ms: number], void>>, R> =>
+        effect<[ms: number], void>()("delay", {
+          defaultHandler: ({ resume }, ms) => {
+            setTimeout(resume, ms);
+          },
+        })(ms).andThen(() => effected);
+
+    const withLog =
+      (message: string) =>
+      <E extends Effect, R>(effected: Effected<E, R>): Effected<E, R> =>
+        effected.tap((value) => {
+          console.log(`${message}: ${String(value)}`);
+        });
+
+    expect(await Effected.of(42).pipe(delay(100)).runAsync()).toBe(42);
+
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    expect(await Effected.of(42).pipe(delay(100), withLog("Result")).runAsync()).toBe(42);
+    expect(logSpy).toHaveBeenCalledOnce();
+    expect(logSpy.mock.calls[0]![0]).toBe("Result: 42");
+    logSpy.mockRestore();
   }
 });
 

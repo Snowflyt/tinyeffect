@@ -1394,6 +1394,35 @@ const welcomeMessage = getUserName.zip(
 
 Just like `.andThen()`, `.zip()` also allows you to use a generator function or another effected program as the handler, which will be flattened automatically.
 
+When built-in methods aren’t sufficient for your needs, you can create custom transformers and chain them with existing effected programs using the `.pipe(...fs)` method. This allows you to apply multiple transformations in a clean, functional style (inspired by [Effect](https://effect.website/docs/getting-started/building-pipelines/#the-pipe-method)):
+
+```typescript
+const delay =
+  (ms: number) =>
+  <E extends Effect, R>(
+    effected: Effected<E, R>,
+  ): Effected<E | Default<Effect<"delay", [ms: number], void>>, R> =>
+    effect<[ms: number], void>()("delay", {
+      defaultHandler: ({ resume }, ms) => {
+        setTimeout(resume, ms);
+      },
+    })(ms).andThen(() => effected);
+
+const withLog =
+  (message: string) =>
+  <E extends Effect, R>(effected: Effected<E, R>): Effected<E, R> =>
+    effected.tap((value) => {
+      console.log(`${message}: ${String(value)}`);
+    });
+
+// Add a delay of 1000ms to the effected program
+console.log(await Effected.of(42).pipe(delay(1000)).runAsync());
+
+// You can use multiple transformers in `.pipe()`
+await Effected.of(42).pipe(delay(1000), withLog("Result")).runAsync();
+// Result: 42
+```
+
 ### Pipeline Syntax V.S. Generator Syntax
 
 Both pipeline syntax and generator syntax are valid approaches for working with effected programs in tinyeffect. Each approach has distinct advantages:

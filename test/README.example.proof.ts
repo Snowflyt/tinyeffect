@@ -927,6 +927,34 @@ test("Effects without generators", () => {
       >,
     );
   }
+
+  {
+    const delay =
+      (ms: number) =>
+      <E extends Effect, R>(
+        effected: Effected<E, R>,
+      ): Effected<E | Default<Effect<"delay", [ms: number], void>>, R> =>
+        effect<[ms: number], void>()("delay", {
+          defaultHandler: ({ resume }, ms) => {
+            setTimeout(resume, ms);
+          },
+        })(ms).andThen(() => effected);
+
+    const withLog =
+      (message: string) =>
+      <E extends Effect, R>(effected: Effected<E, R>): Effected<E, R> =>
+        effected.tap((value) => {
+          console.log(`${message}: ${String(value)}`);
+        });
+
+    expect(Effected.of(42).pipe(delay(100))).to(
+      equal<Effected<Default<Effect<"delay", [ms: number], void>>, number>>,
+    );
+
+    expect(Effected.of(42).pipe(delay(100), withLog("Result"))).to(
+      equal<Effected<Default<Effect<"delay", [ms: number], void>>, number>>,
+    );
+  }
 });
 
 test("Pipeline Syntax V.S. Generator Syntax", () => {

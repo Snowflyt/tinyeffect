@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { EffectFactory, Unresumable } from "../src";
+import type { EffectFactory, InferEffect, Unresumable } from "../src";
 import {
   Effect,
   Effected,
@@ -2592,6 +2592,156 @@ describe("Effected.from", () => {
     expect(count).toBe(1);
     expect(program.runSync()).toBe(42);
     expect(count).toBe(2);
+  });
+});
+
+describe("Effected#pipe", () => {
+  // Create helper functions for piping
+  const addOne = <E extends Effect>(effected: Effected<E, number>): Effected<E, number> =>
+    effected.map((x) => x + 1);
+
+  const double = <E extends Effect>(effected: Effected<E, number>): Effected<E, number> =>
+    effected.map((x) => x * 2);
+
+  const toString = <E extends Effect, T>(effected: Effected<E, T>): Effected<E, string> =>
+    effected.map((x) => String(x));
+
+  const log = effect("log")<[message: string], void>;
+
+  const withLog =
+    <T>(message: string) =>
+    <E extends Effect>(effected: Effected<E, T>): Effected<E | InferEffect<typeof log>, T> =>
+      effected.tap(function* (value) {
+        yield* log(`${message}: ${String(value)}`);
+      });
+
+  const delayEffect = effect("delay")<[ms: number], void>;
+  const delay =
+    (ms: number) =>
+    <E extends Effect, T>(
+      effected: Effected<E, T>,
+    ): Effected<E | InferEffect<typeof delayEffect>, T> => {
+      return effected.andThen(function* (value) {
+        yield* delayEffect(ms);
+        return value;
+      });
+    };
+
+  it("should return the original effected when called with no arguments", () => {
+    const program = Effected.of(42);
+    const result = (program as any).pipe();
+    expect(result).toBe(program); // Should be the same instance
+    expect(result.runSync()).toBe(42);
+  });
+
+  it("should apply a single function correctly", () => {
+    const program = Effected.of(10);
+    const result = program.pipe(addOne);
+    expect(result.runSync()).toBe(11);
+  });
+
+  it("should apply two functions in the correct order", () => {
+    const program = Effected.of(5);
+    const result = program.pipe(addOne, double);
+    expect(result.runSync()).toBe(12); // (5 + 1) * 2 = 12
+
+    // Test with a different order
+    const result2 = program.pipe(double, addOne);
+    expect(result2.runSync()).toBe(11); // (5 * 2) + 1 = 11
+  });
+
+  it("should apply multiple functions in sequence", () => {
+    const program = Effected.of(5);
+    const result = program.pipe(
+      addOne, // 6
+      double, // 12
+      addOne, // 13
+      toString, // "13"
+      (e) => e.map((s) => s + "!"), // "13!"
+    );
+    expect(result.runSync()).toBe("13!");
+  });
+
+  it("should work with functions that add effects", () => {
+    const logs: string[] = [];
+
+    const program = Effected.of(5);
+    const result = program.pipe(
+      withLog("Initial"),
+      addOne,
+      withLog("After adding"),
+      double,
+      withLog("After doubling"),
+    );
+
+    const finalResult = result
+      .resume("log", (message) => {
+        logs.push(message);
+      })
+      .runSync();
+
+    expect(finalResult).toBe(12); // (5 + 1) * 2 = 12
+    expect(logs).toEqual(["Initial: 5", "After adding: 6", "After doubling: 12"]);
+  });
+
+  it("should work with async effects", async () => {
+    vi.useFakeTimers();
+
+    const logs: string[] = [];
+    const timestamps: number[] = [];
+    const recordTime =
+      <T>(label: string) =>
+      <E extends Effect>(effected: Effected<E, T>): Effected<E, T> =>
+        effected.tap(() => {
+          timestamps.push(Date.now());
+          logs.push(`${label} at ${Date.now()}ms`);
+        });
+
+    const program = Effected.of(10);
+    const result = program.pipe(
+      recordTime("Start"),
+      delay(100),
+      recordTime("After delay"),
+      addOne,
+      delay(50),
+      recordTime("Final"),
+      double,
+    );
+
+    const promise = result
+      .handle("delay", ({ resume }, ms) => {
+        setTimeout(() => resume(), ms);
+      })
+      .runAsync();
+
+    // Fast-forward time and check results
+    vi.advanceTimersByTime(100);
+    vi.advanceTimersByTime(50);
+
+    const finalResult = await promise;
+    expect(finalResult).toBe(22); // (10 + 1) * 2 = 22
+
+    // Check that operations happened in the right order with delays
+    expect(logs.length).toBe(3);
+    expect(timestamps[1]! - timestamps[0]!).toBeGreaterThanOrEqual(100);
+    expect(timestamps[2]! - timestamps[1]!).toBeGreaterThanOrEqual(50);
+
+    vi.useRealTimers();
+  });
+
+  it("should handle fallback case with many functions", () => {
+    const program = Effected.of(1);
+
+    for (let i = 1; i <= 12; i++) {
+      const fs = Array.from(
+        { length: i },
+        (_, j) =>
+          <E extends Effect>(e: Effected<E, number>) =>
+            e.map((x) => x + j + 1),
+      );
+      const expected = Array.from({ length: i }, (_, j) => j + 1).reduce((a, b) => a + b, 1);
+      expect((program as any).pipe(...fs).runSync()).toBe(expected);
+    }
   });
 });
 
