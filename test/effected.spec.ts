@@ -385,8 +385,8 @@ describe("effected", () => {
     const some = <T>(value: T): Option<T> => ({ type: "Some", value });
     const none: Option<never> = { type: "None" };
 
-    const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-      effected.andThen(some).terminate("raise", () => none),
+    const raiseOption = defineHandlerFor<Raise>().with((self) =>
+      self.andThen(some).terminate("raise", () => none),
     );
 
     const raise42 = (n: number) =>
@@ -2597,32 +2597,30 @@ describe("Effected.from", () => {
 
 describe("Effected#pipe", () => {
   // Create helper functions for piping
-  const addOne = <E extends Effect>(effected: Effected<E, number>): Effected<E, number> =>
-    effected.map((x) => x + 1);
+  const addOne = <E extends Effect>(self: Effected<E, number>): Effected<E, number> =>
+    self.map((x) => x + 1);
 
-  const double = <E extends Effect>(effected: Effected<E, number>): Effected<E, number> =>
-    effected.map((x) => x * 2);
+  const double = <E extends Effect>(self: Effected<E, number>): Effected<E, number> =>
+    self.map((x) => x * 2);
 
-  const toString = <E extends Effect, T>(effected: Effected<E, T>): Effected<E, string> =>
-    effected.map((x) => String(x));
+  const toString = <E extends Effect, T>(self: Effected<E, T>): Effected<E, string> =>
+    self.map((x) => String(x));
 
   const log = effect("log")<[message: string], void>;
 
   const withLog =
     <T>(message: string) =>
-    <E extends Effect>(effected: Effected<E, T>): Effected<E | InferEffect<typeof log>, T> =>
-      effected.tap(function* (value) {
+    <E extends Effect>(self: Effected<E, T>): Effected<E | InferEffect<typeof log>, T> =>
+      self.tap(function* (value) {
         yield* log(`${message}: ${String(value)}`);
       });
 
-  const delayEffect = effect("delay")<[ms: number], void>;
+  const sleep = effect("sleep")<[ms: number], void>;
   const delay =
     (ms: number) =>
-    <E extends Effect, T>(
-      effected: Effected<E, T>,
-    ): Effected<E | InferEffect<typeof delayEffect>, T> => {
-      return effected.andThen(function* (value) {
-        yield* delayEffect(ms);
+    <E extends Effect, T>(self: Effected<E, T>): Effected<E | InferEffect<typeof sleep>, T> => {
+      return self.andThen(function* (value) {
+        yield* sleep(ms);
         return value;
       });
     };
@@ -2691,8 +2689,8 @@ describe("Effected#pipe", () => {
     const timestamps: number[] = [];
     const recordTime =
       <T>(label: string) =>
-      <E extends Effect>(effected: Effected<E, T>): Effected<E, T> =>
-        effected.tap(() => {
+      <E extends Effect>(self: Effected<E, T>): Effected<E, T> =>
+        self.tap(() => {
           timestamps.push(Date.now());
           logs.push(`${label} at ${Date.now()}ms`);
         });
@@ -2709,7 +2707,7 @@ describe("Effected#pipe", () => {
     );
 
     const promise = result
-      .handle("delay", ({ resume }, ms) => {
+      .handle("sleep", ({ resume }, ms) => {
         setTimeout(() => resume(), ms);
       })
       .runAsync();

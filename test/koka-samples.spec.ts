@@ -64,8 +64,8 @@ type Maybe<T> = { _tag: "Just"; value: T } | { _tag: "Nothing" };
 const just = <T>(value: T): Maybe<T> => ({ _tag: "Just", value });
 const nothing: Maybe<never> = { _tag: "Nothing" };
 
-const raiseMaybe = defineHandlerFor<Raise>().with((effected) =>
-  effected.andThen((r) => just(r)).terminate("raise", () => nothing),
+const raiseMaybe = defineHandlerFor<Raise>().with((self) =>
+  self.andThen((r) => just(r)).terminate("raise", () => nothing),
 );
 
 test("3.2.3. Polymorphic effects", () => {
@@ -199,9 +199,7 @@ test("3.4.4. Abstracting Handlers", () => {
     .runSync();
   expect(logs).toEqual([["hello"], ["world"]]);
 
-  const emitConsole2 = defineHandlerFor<Emit>().with((effected) =>
-    effected.resume("emit", println),
-  );
+  const emitConsole2 = defineHandlerFor<Emit>().with((self) => self.resume("emit", println));
 
   const eHelloConsole2 = () =>
     effected(function* () {
@@ -223,14 +221,14 @@ const state = {
   set: <T>(x: T): Effected<State<T>, void> => effect("state.set")<[T], void>(x),
 };
 const stateHandler = <T>({ get, set }: { get: () => T; set: (x: T) => void }) =>
-  defineHandlerFor<State<T>>().with((effected) =>
-    effected.resume("state.get", get).resume("state.set", set),
+  defineHandlerFor<State<T>>().with((self) =>
+    self.resume("state.get", get).resume("state.set", set),
   );
 
 const pState = <T>(init: T) =>
-  defineHandlerFor<State<T>>().with((effected) => {
+  defineHandlerFor<State<T>>().with((self) => {
     let st = init;
-    return effected
+    return self
       .andThen((x) => [x, st] as const)
       .resume("state.get", () => st)
       .resume("state.set", (x) => {
@@ -297,8 +295,8 @@ test("3.4.6. Combining Handlers", () => {
 });
 
 test("3.4.8. Overriding Handlers", () => {
-  const emitQuoted = defineHandlerFor<Emit>().with((effected) =>
-    effected.resume("emit", (msg) => emit(`"${msg}"`)),
+  const emitQuoted = defineHandlerFor<Emit>().with((self) =>
+    self.resume("emit", (msg) => emit(`"${msg}"`)),
   );
 
   const messages: string[] = [];

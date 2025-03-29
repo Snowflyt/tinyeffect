@@ -828,10 +828,10 @@ For instance, you can use `.tap()` to simulate a `defer` effect similar to Go’
 type Defer = Effect<"defer", [fn: () => void], void>;
 const defer: EffectFactory<Defer> = effect("defer");
 
-const deferHandler = defineHandlerFor<Defer>().with((effected) => {
+const deferHandler = defineHandlerFor<Defer>().with((self) => {
   const deferredActions: Array<() => void> = [];
 
-  return effected
+  return self
     .resume("defer", (fn) => {
       deferredActions.push(fn);
     })
@@ -947,14 +947,14 @@ Instead of using individual error effects, you can convert them into a `Result` 
 
 ```typescript
 const handleErrorAsResult = <R, E extends Effect, ErrorName extends string>(
-  effected: Effected<Effect.Error<ErrorName> | E, R>,
+  self: Effected<Effect.Error<ErrorName> | E, R>,
 ): Effected<E, Result<R, { error: ErrorName; message?: string }>> => {
   const isErrorEffect = (name: string | symbol): name is `error:${ErrorName}` => {
     if (typeof name === "symbol") return false;
     return name.startsWith("error:");
   };
 
-  return effected
+  return self
     .andThen((value) => ok(value))
     .handle(isErrorEffect, (({ effect, terminate }: any, message: any) => {
       terminate(err({ error: effect.name.slice("error:".length), message }));
@@ -1121,8 +1121,8 @@ Just grouping the effects together is easy, but we still have to handle them one
 ```javascript
 const stateHandler =
   ({ get, set }) =>
-  (effected) =>
-    effected.resume("state.get", get).resume("state.set", set);
+  (self) =>
+    self.resume("state.get", get).resume("state.set", set);
 
 stateHandler({ get: () => n, set: (x) => (n = x) })(sumDown()).runSync();
 ```
@@ -1137,8 +1137,8 @@ Fortunately, tinyeffect performs some type-level magic and provides a helper fun
 import { defineHandlerFor } from "tinyeffect";
 
 const stateHandler = <T>({ get, set }: { get: () => T; set: (x: T) => void }) =>
-  defineHandlerFor<State<T>>().with((effected) =>
-    effected.resume("state.get", get).resume("state.set", set),
+  defineHandlerFor<State<T>>().with((self) =>
+    self.resume("state.get", get).resume("state.set", set),
   );
 
 let n = 10;
@@ -1156,7 +1156,7 @@ const stateHandler: <T>({
 }: {
   get: () => T;
   set: (x: T) => void;
-}) => <R>(effected: EffectedDraft<State<T>, State<T>, R>) => EffectedDraft<State<T>, never, R>;
+}) => <R>(self: EffectedDraft<State<T>, State<T>, R>) => EffectedDraft<State<T>, never, R>;
 ```
 
 The `EffectedDraft` type is used internally by tinyeffect to achieve precise type inference.
@@ -1186,8 +1186,8 @@ const none: Option<never> = { kind: "none" };
 In previous examples, we used `.andThen()` and `.terminate()` to transform the return value of `safeDivide` to an `Option` type. Now, we can abstract this logic into a reusable handler:
 
 ```typescript
-const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-  effected.andThen((value) => some(value)).terminate("raise", () => none),
+const raiseOption = defineHandlerFor<Raise>().with((self) =>
+  self.andThen((value) => some(value)).terminate("raise", () => none),
 );
 
 const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
@@ -1397,21 +1397,22 @@ Just like `.andThen()`, `.zip()` also allows you to use a generator function or 
 When built-in methods aren’t sufficient for your needs, you can create custom transformers and chain them with existing effected programs using the `.pipe(...fs)` method. This allows you to apply multiple transformations in a clean, functional style (inspired by [Effect](https://effect.website/docs/getting-started/building-pipelines/#the-pipe-method)):
 
 ```typescript
+type Sleep = Default<Effect<"sleep", [ms: number], void>>;
+const sleep: EffectFactory<Sleep> = effect("sleep", {
+  defaultHandler: ({ resume }, ms) => {
+    setTimeout(resume, ms);
+  },
+});
+
 const delay =
   (ms: number) =>
-  <E extends Effect, R>(
-    effected: Effected<E, R>,
-  ): Effected<E | Default<Effect<"delay", [ms: number], void>>, R> =>
-    effect<[ms: number], void>()("delay", {
-      defaultHandler: ({ resume }, ms) => {
-        setTimeout(resume, ms);
-      },
-    })(ms).andThen(() => effected);
+  <E extends Effect, R>(self: Effected<E, R>): Effected<E | Sleep, R> =>
+    sleep(ms).andThen(() => self);
 
 const withLog =
   (message: string) =>
-  <E extends Effect, R>(effected: Effected<E, R>): Effected<E, R> =>
-    effected.tap((value) => {
+  <E extends Effect, R>(self: Effected<E, R>): Effected<E, R> =>
+    self.tap((value) => {
       console.log(`${message}: ${String(value)}`);
     });
 

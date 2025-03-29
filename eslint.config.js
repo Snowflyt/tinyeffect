@@ -29,7 +29,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["*.{js,cjs}", "typroof.config.ts"],
+          allowDefaultProject: ["*.{js,cjs}", "scripts/*.ts", "typroof.config.ts"],
           defaultProject: "tsconfig.test.json",
         },
         tsconfigRootDir: import.meta.dirname,

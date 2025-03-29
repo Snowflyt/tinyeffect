@@ -58,15 +58,13 @@ export namespace Effect {
 /**
  * Mark an {@link Effect} as unresumable.
  */
-export type Unresumable<E extends Effect> = E & {
-  readonly resumable: false;
-};
+export type Unresumable<E extends Effect> = E & { resumable: false };
 
 /**
  * Mark an {@link Effect} as unresumable.
  */
 export type Default<E extends Effect, T = never, F extends Effect = never> = E & {
-  readonly defaultHandler: ({
+  defaultHandler: ({
     effect,
     resume,
     terminate,
@@ -74,7 +72,7 @@ export type Default<E extends Effect, T = never, F extends Effect = never> = E &
     effect: Effect; // NOTE: Use `Effect` instead of stricter `E` is intentional to make `E` covariant
     resume: (value: E["__returnType"]) => void;
     terminate: (value: T) => void;
-  }) => Effected<F, E["__returnType"] | T>;
+  }) => void | Generator<F, void, unknown> | Effected<F, void>;
 };
 
 declare const unhandledEffect: unique symbol;

@@ -718,10 +718,10 @@ test("Handling return values", () => {
     type Defer = Effect<"defer", [fn: () => void], void>;
     const defer: EffectFactory<Defer> = effect("defer");
 
-    const deferHandler = defineHandlerFor<Defer>().with((effected) => {
+    const deferHandler = defineHandlerFor<Defer>().with((self) => {
       const deferredActions: (() => void)[] = [];
 
-      return effected
+      return self
         .resume("defer", (fn) => {
           deferredActions.push(fn);
         })
@@ -809,14 +809,14 @@ test("Handling multiple effects in one handler", () => {
     const err = <E>(error: E): Result<never, E> => ({ kind: "err", error });
 
     const handleErrorAsResult = <R, E extends Effect, ErrorName extends string>(
-      effected: Effected<Effect.Error<ErrorName> | E, R>,
+      self: Effected<Effect.Error<ErrorName> | E, R>,
     ): Effected<E, Result<R, { error: ErrorName; message?: string }>> => {
       const isErrorEffect = (name: string | symbol): name is `error:${ErrorName}` => {
         if (typeof name === "symbol") return false;
         return name.startsWith("error:");
       };
 
-      return effected
+      return self
         .andThen((value) => ok(value))
         .handle(isErrorEffect, (({ effect, terminate }: any, message: any) => {
           terminate(err({ error: effect.name.slice("error:".length), message }));
@@ -1192,8 +1192,8 @@ test("Abstracting handlers", () => {
     expect(program.runSync()).toBe(55);
 
     const stateHandler = <T>({ get, set }: { get: () => T; set: (x: T) => void }) =>
-      defineHandlerFor<State<T>>().with((effected) =>
-        effected.resume("state.get", get).resume("state.set", set),
+      defineHandlerFor<State<T>>().with((self) =>
+        self.resume("state.get", get).resume("state.set", set),
       );
 
     n = 10;
@@ -1217,8 +1217,8 @@ test("Abstracting handlers", () => {
     const some = <T>(value: T): Option<T> => ({ kind: "some", value });
     const none: Option<never> = { kind: "none" };
 
-    const raiseOption = defineHandlerFor<Raise>().with((effected) =>
-      effected.andThen((value) => some(value)).terminate("raise", () => none),
+    const raiseOption = defineHandlerFor<Raise>().with((self) =>
+      self.andThen((value) => some(value)).terminate("raise", () => none),
     );
 
     const safeDivide2 = (a: number, b: number) => safeDivide(a, b).with(raiseOption);
@@ -1506,21 +1506,22 @@ test("Effects without generators (Pipeline syntax)", async () => {
 
   // Test `.pipe(...fs)`
   {
+    type Sleep = Default<Effect<"sleep", [ms: number], void>>;
+    const sleep: EffectFactory<Sleep> = effect("sleep", {
+      defaultHandler: ({ resume }, ms) => {
+        setTimeout(resume, ms);
+      },
+    });
+
     const delay =
       (ms: number) =>
-      <E extends Effect, R>(
-        effected: Effected<E, R>,
-      ): Effected<E | Default<Effect<"delay", [ms: number], void>>, R> =>
-        effect<[ms: number], void>()("delay", {
-          defaultHandler: ({ resume }, ms) => {
-            setTimeout(resume, ms);
-          },
-        })(ms).andThen(() => effected);
+      <E extends Effect, R>(self: Effected<E, R>): Effected<E | Sleep, R> =>
+        sleep(ms).andThen(() => self);
 
     const withLog =
       (message: string) =>
-      <E extends Effect, R>(effected: Effected<E, R>): Effected<E, R> =>
-        effected.tap((value) => {
+      <E extends Effect, R>(self: Effected<E, R>): Effected<E, R> =>
+        self.tap((value) => {
           console.log(`${message}: ${String(value)}`);
         });
 
