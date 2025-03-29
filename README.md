@@ -1511,6 +1511,246 @@ While the pipeline syntax shown above is more compact, it may not be as readable
 
 Both generator syntax and pipeline syntax are fully supported in tinyeffect — choose whichever approach makes your code most readable and maintainable for you and your team. The best choice often depends on the specific task and your team’s preferences.
 
+### Example: Build a configurable logging system with effects
+
+Let’s walk through a practical example of using algebraic effects to build a flexible logging system similar to what you might use in a real application. We aim to achieve the following goals:
+
+- Support multiple logging levels (debug, info, warn, error).
+- Allow setting minimum logging levels for different parts of the application.
+- Enable logging to different outputs (console, file, etc.).
+- Provide a way to customize the logging format.
+
+In the following example, we’ll achieve this by defining a set of effects for logging, creating default effect handlers that log to the console, and defining several helper functions to manage logging levels and outputs. All of this is implemented in ~60 lines of code.
+
+**Step 1: Define a dependency for logger**
+
+We’ll start by defining a dependency for the logger, which will be used to redirect log messages to different outputs.
+
+```typescript
+export interface Logger {
+  debug: (...args: unknown[]) => void | Promise<void>;
+  info: (...args: unknown[]) => void | Promise<void>;
+  warn: (...args: unknown[]) => void | Promise<void>;
+  error: (...args: unknown[]) => void | Promise<void>;
+}
+
+// Define a dependency for injecting a logger
+export type LoggerDependency = Default<Effect.Dependency<"logger", Logger>>;
+// Create dependency with console as default implementation
+export const askLogger = dependency<Logger>()("logger", () => console);
+```
+
+Note that we allow loggers to be asynchronous, so you can implement a logger that writes to a file or sends logs to a remote server. This is one advantage of algebraic effects: you don’t need to distinguish between synchronous and asynchronous effects, as they are all treated uniformly.
+
+**Step 2: Create effects for each log level**
+
+Next, we’ll define effects for each log level. These effects will be used to log messages at different levels.
+
+```typescript
+export type Logging =
+  | Default<Effect<"logging.debug", unknown[], void>, never, LoggerDependency>
+  | Default<Effect<"logging.info", unknown[], void>, never, LoggerDependency>
+  | Default<Effect<"logging.warn", unknown[], void>, never, LoggerDependency>
+  | Default<Effect<"logging.error", unknown[], void>, never, LoggerDependency>;
+
+export const logLevels = ["debug", "info", "warn", "error"] as const;
+export type LogLevel = (typeof logLevels)[number];
+
+// A helper function to create a logging effect for each level
+const logEffect = (level: LogLevel): EffectFactory<Logging> =>
+  effect(`logging.${level}`, {
+    *defaultHandler({ resume }, ...args) {
+      const logger = yield* askLogger();
+      const result = logger[level](...args);
+      // Handle async loggers
+      if (result instanceof Promise) result.then(resume);
+      else resume();
+    },
+  });
+
+// Create effect functions for each log level
+export const logDebug = logEffect("debug");
+export const logInfo = logEffect("info");
+export const logWarn = logEffect("warn");
+export const logError = logEffect("error");
+```
+
+We define a default effect handler that relies on the `Logger` dependency for each log level. This allows us to control which log levels are enabled at runtime.
+
+**Step 3: Define handlers for common logging features**
+
+We’ll define several helper functions to manage logging levels and outputs. The `defineHandlerFor` helper will be used to create these helper functions.
+
+The first helper is `withPrefix(prefixFactory: (level) => string)`, which adds a prefix to each log message based on the log level. This is useful for distinguishing between different log levels in the output.
+
+```typescript
+export function withPrefix(prefixFactory: (level: LogLevel) => string) {
+  return defineHandlerFor<Logging>().with((self) =>
+    self.handle(
+      (name): name is Logging["name"] => typeof name === "string" && name.startsWith("logging."),
+      function* ({ effect, resume }): Generator<Logging, void> {
+        const prefix = prefixFactory(effect.name.slice("logging.".length) as LogLevel);
+        // Insert prefix at the beginning of the payloads
+        effect.payloads.splice(0, 0, prefix);
+        yield effect; // Re-yield the effect with the modified payloads
+        resume();
+      },
+    ),
+  );
+}
+```
+
+The next is `withMinimumLogLevel(level)`, which filters out log messages below a specified minimum level. This allows you to control the verbosity of the logs based on the current logging level.
+
+```typescript
+export function withMinimumLogLevel(level: LogLevel | "none") {
+  return defineHandlerFor<Logging>().with((self) => {
+    const disabledLevels = new Set(
+      level === "none" ? logLevels : logLevels.slice(0, logLevels.indexOf(level)),
+    );
+    return self.handle(
+      (name): name is Logging["name"] =>
+        typeof name === "string" &&
+        name.startsWith("logging.") &&
+        disabledLevels.has(name.slice("logging.".length) as LogLevel),
+      function* ({ effect, resume }): Generator<Logging, void> {
+        // Change default handler of disabled log levels to resume immediately
+        effect.defaultHandler = ({ resume }) => resume();
+        yield effect; // Re-yield the effect with the modified default handler
+        resume();
+      },
+    );
+  });
+}
+```
+
+**Step 4: Use the logging system!**
+
+Done! We’ve already created a fully functional logging system. But now you might wonder how to use it in practice. Let’s start by creating a simple program that uses the logging system:
+
+```typescript
+const program = effected(function* () {
+  yield* logDebug("Debug message");
+  yield* logInfo("Info message");
+  yield* logWarn("Warning!");
+  yield* logError("Error occurred!");
+});
+
+await program.runAsync();
+```
+
+We do not explicitly handle any logging effects, so the default handler will be used, which logs to the console. The output will look like this:
+
+```text
+Debug message
+Info message
+Warning!
+Error occurred!
+```
+
+By default, all log levels are enabled, so all messages are printed. Now, let’s set the minimum log level to `warn` to disable debug and info messages:
+
+```typescript
+const program = effected(function* () {
+  // ...
+}).pipe(withMinimumLogLevel("warn"));
+```
+
+The output will now only show the warning and error messages:
+
+```text
+Warning!
+Error occurred!
+```
+
+For now, it’s not easy to distinguish between different log levels. To add a prefix to each log message, we can use the `withPrefix` helper function:
+
+```typescript
+function logPrefix(level: LogLevel) {
+  const date = new Date();
+  const yyyy = date.getFullYear();
+  const MM = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const HH = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  const ss = String(date.getSeconds()).padStart(2, "0");
+  const ms = String(date.getMilliseconds()).padEnd(3, "0");
+  const datePart = `[${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}.${ms}]`;
+  const levelPart = `[${level}]`;
+  return `${datePart} ${levelPart}`;
+}
+
+const program = effected(function* () {
+  // ...
+}).pipe(withMinimumLogLevel("warn"), withPrefix(logPrefix));
+```
+
+Now, the output will look like this:
+
+```text
+[2025-03-29 21:49:03.633] [warn] Warning!
+[2025-03-29 21:49:03.634] [error] Error occurred!
+```
+
+What if we want to log to a file instead of the console? We can create a custom logger that writes to a file and provide it as the `Logger` dependency. Here’s an example of how to do this:
+
+```typescript
+import fs from "node:fs/promises";
+import { show } from "showify";
+
+function fileLogger(path: string) {
+  return new Proxy({} as Logger, {
+    get() {
+      return async (...args: unknown[]) => {
+        const message = args
+          .map((arg) => (typeof arg === "string" ? arg : show(arg, { indent: 2 })))
+          .join(" ");
+        await fs.appendFile(path, message + "\n");
+      };
+    },
+  });
+}
+
+const program = effected(function* () {
+  // ...
+})
+  .pipe(withMinimumLogLevel("warn"), withPrefix(logPrefix))
+  .provide("logger", fileLogger("log.txt"));
+```
+
+In this example, we use [showify](https://github.com/Snowflyt/showify) to format the log messages into human-readable strings. The `fileLogger` function accepts a file path and returns a logger object that writes log messages to that file. We use `node:fs/promises` to handle file operations asynchronously.
+
+Now, instead of logging to the console, all log messages will be written to the `log.txt` file. You can customize the logger to write to different outputs, such as a database or a remote server.
+
+You can also create a helper function to combine multiple handlers together:
+
+```typescript
+function dualLogger(logger1: Logger, logger2: Logger) {
+  return new Proxy({} as Logger, {
+    get(_, prop, receiver) {
+      return (...args: unknown[]) => {
+        const result1 = Reflect.get(logger1, prop, receiver)(...args);
+        const result2 = Reflect.get(logger2, prop, receiver)(...args);
+        if (result1 instanceof Promise && result2 instanceof Promise)
+          return Promise.all([result1, result2]);
+        else if (result1 instanceof Promise) return result1;
+        else if (result2 instanceof Promise) return result2;
+      };
+    },
+  });
+}
+
+const program = effected(function* () {
+  // ...
+})
+  .pipe(withMinimumLogLevel("warn"), withPrefix(logPrefix))
+  .provide("logger", dualLogger(console, fileLogger("log.txt")));
+```
+
+Now, all log messages will be logged to both the console and the `log.txt` file.
+
+To extend the logging system, you can create additional effects for other log levels, such as `trace`, `fatal`, or a `log` effect that defaults to `info` but can be configured to use any log level. In real applications, you can also redirect log messages to a worker thread and then handle them with a message queue, allowing you to log messages without blocking the main thread.
+
 ## FAQ
 
 ### What’s the relationship between tinyeffect and Effect?
@@ -1520,3 +1760,7 @@ It is a coincidence that the name “tinyeffect” is similar to [Effect](https:
 However, it is not surprising that the two libraries share some similarities, as they both aim to provide a way to handle side effects in a type-safe manner. The `Effect` type in Effect and the `Effected` type in tinyeffect are both monads that abstract effectful computations, and they share similarities in their API design, e.g., `Effect.map()` vs. `Effected.prototype.map()`, `Effect.flatMap()` vs. `Effected.prototype.flatMap()`, `Effect.andThen()` vs. `Effected.prototype.andThen()`, etc.
 
 While sharing some similarities, tinyeffect and Effect are fundamentally different in their design and implementation. tinyeffect is designed to be a lightweight library that focuses on providing a simple and intuitive API for handling side effects, while Effect is designed to be a full-fledged library that provides a comprehensive set of features for building effectful applications. Also, both libraries provide concurrency primitives, but Effect uses a fiber-based concurrency model, whereas tinyeffect uses a simple iterator-based model.
+
+```
+
+```

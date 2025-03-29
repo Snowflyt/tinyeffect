@@ -1102,3 +1102,186 @@ test("Pipeline Syntax V.S. Generator Syntax", () => {
     );
   }
 });
+
+test("Example: Build a configurable logging system with effects", () => {
+  type Sleep = Default<Effect<"sleep", [ms: number], void>>;
+  const sleep: EffectFactory<Sleep> = effect("sleep", {
+    defaultHandler: ({ resume }, ms) => {
+      setTimeout(resume, ms);
+    },
+  });
+
+  interface Logger {
+    debug: (...args: unknown[]) => void | Promise<void>;
+    info: (...args: unknown[]) => void | Promise<void>;
+    warn: (...args: unknown[]) => void | Promise<void>;
+    error: (...args: unknown[]) => void | Promise<void>;
+  }
+  type LoggerDependency = Default<Effect.Dependency<"logger", Logger>>;
+  const askLogger = dependency<Logger>()("logger", () => console);
+
+  type Logging =
+    | Default<Effect<"logging.debug", unknown[], void>, never, LoggerDependency>
+    | Default<Effect<"logging.info", unknown[], void>, never, LoggerDependency>
+    | Default<Effect<"logging.warn", unknown[], void>, never, LoggerDependency>
+    | Default<Effect<"logging.error", unknown[], void>, never, LoggerDependency>;
+
+  const logLevels = ["debug", "info", "warn", "error"] as const;
+  type LogLevel = (typeof logLevels)[number];
+
+  const logEffect = (level: LogLevel): EffectFactory<Logging> =>
+    effect(`logging.${level}`, {
+      *defaultHandler({ resume }, ...args) {
+        const logger = yield* askLogger();
+        const result = logger[level](...args);
+        if (result instanceof Promise) void result.then(resume);
+        else resume();
+      },
+    });
+
+  const logDebug = logEffect("debug");
+  const logInfo = logEffect("info");
+  const logWarn = logEffect("warn");
+  const logError = logEffect("error");
+
+  function withPrefix(prefixFactory: (level: LogLevel) => string) {
+    return defineHandlerFor<Logging>().with((self) =>
+      self.handle(
+        (name): name is Logging["name"] => typeof name === "string" && name.startsWith("logging."),
+        function* ({ effect, resume }): Generator<Logging, void> {
+          const prefix = prefixFactory(effect.name.slice("logging.".length) as LogLevel);
+          effect.payloads.splice(0, 0, prefix);
+          yield effect;
+          resume();
+        },
+      ),
+    );
+  }
+
+  function withMinimumLogLevel(level: LogLevel | "none") {
+    return defineHandlerFor<Logging>().with((self) => {
+      const disabledLevels = new Set(
+        level === "none" ? logLevels : logLevels.slice(0, logLevels.indexOf(level)),
+      );
+      return self.handle(
+        (name): name is Logging["name"] =>
+          typeof name === "string" &&
+          name.startsWith("logging.") &&
+          disabledLevels.has(name.slice("logging.".length) as LogLevel),
+        function* ({ effect, resume }): Generator<Logging, void> {
+          effect.defaultHandler = ({ resume }) => resume();
+          yield effect;
+          resume();
+        },
+      );
+    });
+  }
+
+  const program1 = effected(function* () {
+    yield* logDebug("Debug message");
+    yield* sleep(1000);
+    yield* logInfo("Info message");
+    yield* logWarn("Warning!");
+    yield* logError("Error occurred!");
+  });
+  expect(program1).to(equal<Effected<Logging | Sleep, void>>);
+
+  const program2 = effected(function* () {
+    yield* logDebug("Debug message");
+    yield* sleep(1000);
+    yield* logInfo("Info message");
+    yield* logWarn("Warning!");
+    yield* logError("Error occurred!");
+  }).pipe(withMinimumLogLevel("warn"));
+  expect(program2).to(equal<Effected<Logging | Sleep, void>>);
+
+  function logPrefix(level: LogLevel) {
+    const date = new Date();
+    const yyyy = date.getFullYear();
+    const MM = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    const HH = String(date.getHours()).padStart(2, "0");
+    const mm = String(date.getMinutes()).padStart(2, "0");
+    const ss = String(date.getSeconds()).padStart(2, "0");
+    const ms = String(date.getMilliseconds()).padEnd(3, "0");
+    const datePart = `[${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}.${ms}]`;
+    const levelPart = `[${level}]`;
+    return `${datePart} ${levelPart}`;
+  }
+
+  const program3 = effected(function* () {
+    yield* logDebug("Debug message");
+    yield* sleep(1000);
+    yield* logInfo("Info message");
+    yield* logWarn("Warning!");
+    yield* logError("Error occurred!");
+  }).pipe(withMinimumLogLevel("warn"), withPrefix(logPrefix));
+  expect(program3).to(equal<Effected<Logging | Sleep, void>>);
+
+  function fileLogger(_path: string) {
+    return new Proxy({} as Logger, {
+      get() {
+        return async () => {};
+      },
+    });
+  }
+
+  const program4 = effected(function* () {
+    yield* logDebug("Debug message");
+    yield* sleep(1000);
+    yield* logInfo("Info message");
+    yield* logWarn("Warning!");
+    yield* logError("Error occurred!");
+  })
+    .pipe(withMinimumLogLevel("warn"), withPrefix(logPrefix))
+    .provide("logger", fileLogger("log.txt"));
+  expect(program4).to(
+    equal<
+      Effected<
+        | Default<Effect<"logging.debug", unknown[], void>>
+        | Default<Effect<"logging.info", unknown[], void>>
+        | Default<Effect<"logging.warn", unknown[], void>>
+        | Default<Effect<"logging.error", unknown[], void>>
+        | Sleep,
+        void
+      >
+    >,
+  );
+
+  function dualLogger(logger1: Logger, logger2: Logger) {
+    return new Proxy({} as Logger, {
+      get(_, prop, receiver) {
+        return (...args: unknown[]) => {
+          const result1 = Reflect.get(logger1, prop, receiver)(...args);
+          const result2 = Reflect.get(logger2, prop, receiver)(...args);
+          if (result1 instanceof Promise && result2 instanceof Promise)
+            return Promise.all([result1, result2]);
+          else if (result1 instanceof Promise) return result1;
+          else if (result2 instanceof Promise) return result2;
+        };
+      },
+    });
+  }
+
+  const program5 = effected(function* () {
+    yield* logDebug("Debug message");
+    yield* sleep(1000);
+    yield* logInfo("Info message");
+    yield* logWarn("Warning!");
+    yield* logError("Error occurred!");
+  })
+    .pipe(withMinimumLogLevel("warn"), withPrefix(logPrefix))
+    .provide("logger", dualLogger(console, fileLogger("log.txt")));
+  expect(program5).to(
+    equal<
+      Effected<
+        | Default<Effect<"logging.debug", unknown[], void>>
+        | Default<Effect<"logging.info", unknown[], void>>
+        | Default<Effect<"logging.warn", unknown[], void>>
+        | Default<Effect<"logging.error", unknown[], void>>
+        | Sleep,
+        void
+      >
+    >,
+  );
+});
