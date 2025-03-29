@@ -2212,36 +2212,34 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
   pipe<E2 extends Effect, R2, E3 extends Effect, R3, E4 extends Effect, R4, E5 extends Effect, R5, E6 extends Effect, R6, E7 extends Effect, R7, E8 extends Effect, R8, E8In extends Effect, E9Out extends Effect, R9>(a: (self: Effected<E, R>) => Effected<E2, R2>, b: (self: Effected<E2, R2>) => Effected<E3, R3>, c: (self: Effected<E3, R3>) => Effected<E4, R4>, d: (self: Effected<E4, R4>) => Effected<E5, R5>, e: (self: Effected<E5, R5>) => Effected<E6, R6>, f: (self: Effected<E6, R6>) => Effected<E7, R7>, g: (self: Effected<E7, R7>) => Effected<E8, R8>, h: (self: EffectedDraft<never, never, R8>) => EffectedDraft<E8In, E9Out, R9>): Effected<Exclude<E8, E8In> | E9Out, R9>;
   // prettier-ignore
   pipe<E2 extends Effect, R2, E3 extends Effect, R3, E4 extends Effect, R4, E5 extends Effect, R5, E6 extends Effect, R6, E7 extends Effect, R7, E8 extends Effect, R8, E9 extends Effect, R9>(a: (self: Effected<E, R>) => Effected<E2, R2>, b: (self: Effected<E2, R2>) => Effected<E3, R3>, c: (self: Effected<E3, R3>) => Effected<E4, R4>, d: (self: Effected<E4, R4>) => Effected<E5, R5>, e: (self: Effected<E5, R5>) => Effected<E6, R6>, f: (self: Effected<E6, R6>) => Effected<E7, R7>, g: (self: Effected<E7, R7>) => Effected<E8, R8>, h: (self: Effected<E8, R8>) => Effected<E9, R9>): Effected<E9, R9>;
-  pipe(...args: ((value: any) => any)[]): any {
+  pipe(...fs: ((value: any) => any)[]): any {
     // Optimization inspired by Effect
     // https://github.com/Effect-TS/effect/blob/f293e97ab2a26f45586de106b85119c5d98ab4c7/packages/effect/src/Pipeable.ts#L491-L524
-    switch (args.length) {
+    switch (fs.length) {
       case 0:
         return this;
       case 1:
-        return args[0]!(this);
+        return fs[0]!(this);
       case 2:
-        return args[1]!(args[0]!(this));
+        return fs[1]!(fs[0]!(this));
       case 3:
-        return args[2]!(args[1]!(args[0]!(this)));
+        return fs[2]!(fs[1]!(fs[0]!(this)));
       case 4:
-        return args[3]!(args[2]!(args[1]!(args[0]!(this))));
+        return fs[3]!(fs[2]!(fs[1]!(fs[0]!(this))));
       case 5:
-        return args[4]!(args[3]!(args[2]!(args[1]!(args[0]!(this)))));
+        return fs[4]!(fs[3]!(fs[2]!(fs[1]!(fs[0]!(this)))));
       case 6:
-        return args[5]!(args[4]!(args[3]!(args[2]!(args[1]!(args[0]!(this))))));
+        return fs[5]!(fs[4]!(fs[3]!(fs[2]!(fs[1]!(fs[0]!(this))))));
       case 7:
-        return args[6]!(args[5]!(args[4]!(args[3]!(args[2]!(args[1]!(args[0]!(this)))))));
+        return fs[6]!(fs[5]!(fs[4]!(fs[3]!(fs[2]!(fs[1]!(fs[0]!(this)))))));
       case 8:
-        return args[7]!(args[6]!(args[5]!(args[4]!(args[3]!(args[2]!(args[1]!(args[0]!(this))))))));
+        return fs[7]!(fs[6]!(fs[5]!(fs[4]!(fs[3]!(fs[2]!(fs[1]!(fs[0]!(this))))))));
       case 9:
-        return args[8]!(
-          args[7]!(args[6]!(args[5]!(args[4]!(args[3]!(args[2]!(args[1]!(args[0]!(this)))))))),
-        );
+        return fs[8]!(fs[7]!(fs[6]!(fs[5]!(fs[4]!(fs[3]!(fs[2]!(fs[1]!(fs[0]!(this)))))))));
       default: {
         // eslint-disable-next-line @typescript-eslint/no-this-alias
         let result = this;
-        for (let i = 0, len = args.length; i < len; i++) result = args[i]!(result);
+        for (let i = 0, len = fs.length; i < len; i++) result = fs[i]!(result);
         return result;
       }
     }
