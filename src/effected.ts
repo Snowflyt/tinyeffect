@@ -2623,7 +2623,7 @@ export function runAsync<E extends Effected<Effect, unknown>>(
 
   return new Promise((resolve, reject) => {
     const iterate = (...args: [] | [unknown]) => {
-      if (context.terminated) return context.terminatedValue;
+      if (context.terminated) return resolve(context.terminatedValue as never);
 
       let done: boolean | undefined;
       let value: any;
@@ -2636,7 +2636,8 @@ export function runAsync<E extends Effected<Effect, unknown>>(
       }
 
       // We use a while loop to avoid stack overflow when there are many synchronous effects
-      while (!done) {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      while (!done && !context.terminated) {
         if (!value) {
           reject(
             new Error(
@@ -2649,7 +2650,7 @@ export function runAsync<E extends Effected<Effect, unknown>>(
           while (value instanceof Effect && typeof (value as any).defaultHandler === "function") {
             value = handleEffect(context, effect.name, value, (value as any).defaultHandler).value;
             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            if (context.terminated) return context.terminatedValue;
+            if (context.terminated) return resolve(context.terminatedValue as never);
           }
           if (value instanceof Effect) {
             reject(new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`));
@@ -2693,7 +2694,8 @@ export function runAsync<E extends Effected<Effect, unknown>>(
         return;
       }
 
-      resolve(value);
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      resolve(context.terminated ? (context.terminatedValue as never) : value);
     };
 
     iterate();

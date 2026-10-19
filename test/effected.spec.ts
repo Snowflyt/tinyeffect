@@ -774,6 +774,130 @@ describe("Default handlers", () => {
     expect(badProgram.runSync()).toBe("Cannot divide by zero");
   });
 
+  describe("runAsync termination settlement", () => {
+    it.each([false, true])(
+      "should resolve a default termination value after an async boundary: %s",
+      async (afterAsync) => {
+        const events: string[] = [];
+        const stop = effect<[], never, string>()("stop", {
+          defaultHandler: ({ terminate }) => terminate("stopped"),
+        });
+        const program = effected(function* () {
+          if (afterAsync) yield* effectify(Promise.resolve());
+          yield* stop();
+          events.push("continued");
+          return "completed";
+        });
+
+        await expect(program.runAsync()).resolves.toBe("stopped");
+        expect(events).toEqual([]);
+      },
+      1000,
+    );
+
+    it("should resolve when a default generator terminates after awaiting", async () => {
+      const events: string[] = [];
+      const stop = effect<[], never, number>()("stop", {
+        *defaultHandler({ terminate }) {
+          yield* effectify(Promise.resolve());
+          terminate(7);
+        },
+      });
+      const program = effected(function* () {
+        yield* stop();
+        events.push("continued");
+        return 99;
+      });
+
+      await expect(program.runAsync()).resolves.toBe(7);
+      expect(events).toEqual([]);
+    });
+
+    it("should resolve when a default generator terminates after a synchronous effect", async () => {
+      const events: string[] = [];
+      const resume = effect<[], void>()("resume", {
+        defaultHandler: ({ resume }) => resume(),
+      });
+      const stop = effect<[], never, number>()("stop", {
+        *defaultHandler({ terminate }) {
+          yield* resume();
+          terminate(7);
+        },
+      });
+      const program = effected(function* () {
+        yield* stop();
+        events.push("continued");
+        return 99;
+      });
+
+      await expect(program.runAsync()).resolves.toBe(7);
+      expect(events).toEqual([]);
+    });
+
+    it("should stop parent handlers when a nested default generator terminates after awaiting", async () => {
+      const events: string[] = [];
+      const stop = effect<[], never, number>()("stop", {
+        *defaultHandler({ terminate }) {
+          yield* effectify(Promise.resolve());
+          terminate(7);
+        },
+      });
+      const outer = effect<[], number, number>()("outer", {
+        *defaultHandler({ resume }) {
+          yield* stop();
+          events.push("outer continued");
+          resume(1);
+        },
+      });
+      const program = effected(function* () {
+        yield* outer();
+        events.push("program continued");
+        return 99;
+      });
+
+      await expect(program.runAsync()).resolves.toBe(7);
+      expect(events).toEqual([]);
+    });
+
+    it("should resolve a default termination without a value", async () => {
+      const stop = effect<[], never, void>()("stop", {
+        defaultHandler: ({ terminate }) => terminate(),
+      });
+      const program = effected(function* () {
+        yield* effectify(Promise.resolve());
+        yield* stop();
+        return "completed";
+      });
+
+      await expect(program.runAsync()).resolves.toBeUndefined();
+    }, 1000);
+
+    it.each(["stopped", undefined])(
+      "should resolve when a default handler terminates asynchronously with %s",
+      async (value) => {
+        let terminate!: (value: string | undefined) => void;
+        const events: string[] = [];
+        const stop = effect<[], never, string | undefined>()("stop", {
+          defaultHandler: (context) => {
+            terminate = context.terminate;
+          },
+        });
+        const program = effected(function* () {
+          yield* stop();
+          events.push("continued");
+          return "completed";
+        });
+        const result = program.runAsync();
+
+        terminate(value);
+
+        await expect(result).resolves.toBe(value);
+        expect(events).toEqual([]);
+      },
+      1000,
+    );
+  });
+
   it("should handle async operations in default handlers", async () => {
     const fetchData = effect<[url: string], any>()("fetchData", {
       defaultHandler: ({ resume }, url) => {
