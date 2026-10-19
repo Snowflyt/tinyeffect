@@ -1800,8 +1800,8 @@ test("Example: Build a configurable logging system with effects", async () => {
       *defaultHandler({ resume }, ...args) {
         const logger = yield* askLogger();
         const result = logger[level](...args);
-        if (result instanceof Promise) void result.then(resume);
-        else resume();
+        if (result instanceof Promise) yield* effectify(result);
+        resume();
       },
     });
 
@@ -1961,4 +1961,70 @@ test("Example: Build a configurable logging system with effects", async () => {
   ]);
   logs.length = 0;
   fileLogs.length = 0;
+
+  // Synchronous loggers still support runSync.
+  const syncResult = effected(function* () {
+    yield* logInfo("Sync message");
+    return "done";
+  }).runSync();
+  expect(syncResult).toBe("done");
+  expect(logs).toEqual([["info", "Sync message"]]);
+
+  // A pending logger must finish before the program resumes.
+  {
+    let finishWrite!: () => void;
+    const write = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    const logger = { ...mockConsole, info: vi.fn(() => write) };
+    const continued = vi.fn();
+    const result = effected(function* () {
+      yield* logInfo("Async message");
+      continued();
+      return "done";
+    })
+      .provide("logger", logger)
+      .runAsync();
+
+    expect(logger.info).toHaveBeenCalledExactlyOnceWith("Async message");
+    expect(continued).not.toHaveBeenCalled();
+    finishWrite();
+    await expect(result).resolves.toBe("done");
+    expect(continued).toHaveBeenCalledOnce();
+  }
+
+  // Logging failures must reject the public Promise without an unhandled derivative.
+  {
+    let failWrite!: (reason: Error) => void;
+    const write = new Promise<void>((_, reject) => {
+      failWrite = reject;
+    });
+    const failure = new Error("Logging failed");
+    const logger = { ...mockConsole, info: vi.fn(() => write) };
+    const continued = vi.fn();
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    try {
+      const result = effected(function* () {
+        yield* logInfo("Failed message");
+        continued();
+      })
+        .provide("logger", logger)
+        .runAsync();
+      const fulfilled = vi.fn();
+      const rejected = vi.fn();
+      void result.then(fulfilled, rejected);
+
+      expect(logger.info).toHaveBeenCalledExactlyOnceWith("Failed message");
+      failWrite(failure);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(rejected).toHaveBeenCalledOnce();
+      expect(rejected.mock.calls[0]?.[0]).toBe(failure);
+      expect(fulfilled).not.toHaveBeenCalled();
+      expect(continued).not.toHaveBeenCalled();
+      expect(unhandled).not.toHaveBeenCalled();
+    } finally {
+      process.off("unhandledRejection", unhandled);
+    }
+  }
 });
