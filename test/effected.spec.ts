@@ -873,6 +873,14 @@ describe("Default handlers", () => {
 describe("Effected.all", () => {
   const delay = effect("delay")<[ms: number, label: string], string>;
 
+  function deferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    const promise = new Promise<T>((complete) => {
+      resolve = complete;
+    });
+    return { promise, resolve };
+  }
+
   it("should run effects in parallel rather than sequentially", async () => {
     const executeOrder: string[] = [];
     const startTime = Date.now();
@@ -1380,6 +1388,53 @@ describe("Effected.all", () => {
 
     // Results should match regardless of execution strategy
     expect(seqResult).toEqual(result);
+  });
+
+  it("should complete nested effects resolved in reverse order in the same turn", async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const firstTask = effected(function* () {
+      return yield* effectify(first.promise);
+    });
+    const secondTask = effected(function* () {
+      return yield* effectify(second.promise);
+    });
+    const result = Effected.all([Effected.all([firstTask, secondTask])]).runAsync();
+
+    second.resolve("second");
+    first.resolve("first");
+
+    await expect(result).resolves.toEqual([["first", "second"]]);
+  });
+
+  it("should complete the ready first effect while the second effect waits again", async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const third = deferred<void>();
+    const firstCompleted = deferred<string>();
+    const secondWaiting = deferred<void>();
+
+    const firstTask = effected(function* () {
+      const value = yield* effectify(first.promise);
+      firstCompleted.resolve(value);
+      return value;
+    });
+    const secondTask = effected(function* () {
+      const value = yield* effectify(second.promise);
+      secondWaiting.resolve();
+      yield* effectify(third.promise);
+      return value;
+    });
+    const result = Effected.all([Effected.all([firstTask, secondTask])]).runAsync();
+
+    second.resolve("second");
+    first.resolve("first");
+
+    await secondWaiting.promise;
+    await expect(firstCompleted.promise).resolves.toBe("first");
+    third.resolve();
+
+    await expect(result).resolves.toEqual([["first", "second"]]);
   });
 
   it("should handle empty input correctly", () => {
