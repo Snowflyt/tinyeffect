@@ -2614,30 +2614,71 @@ export function runAsync<E extends Effected<Effect, unknown>>(
     : UnhandledEffect<ExtractUnhandled<F>>
   : never,
 ): Promise<E extends Effected<infer F, infer R> ? ExtractDefaultTerminateType<F> | R : never> {
-  const iterator = (effected as Iterable<any>)[Symbol.iterator]();
-  const context = {
-    interceptIterator: null as typeof iterator | null,
-    terminated: false as false | "with-value" | "without-value",
-    terminatedValue: undefined as unknown,
-  };
-
   return new Promise((resolve, reject) => {
+    const iterator = (effected as Iterable<any>)[Symbol.iterator]();
+    const context = {
+      interceptIterator: null as typeof iterator | null,
+      terminated: false as false | "with-value" | "without-value",
+      terminatedValue: undefined as unknown,
+    };
+
     const iterate = (...args: [] | [unknown]) => {
-      if (context.terminated) return context.terminatedValue;
-
-      let done: boolean | undefined;
-      let value: any;
       try {
-        ({ done, value } = (context.interceptIterator || iterator).next(...args));
-      } catch (e) {
-        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-        reject(e);
-        return;
-      }
+        if (context.terminated) return context.terminatedValue;
 
-      // We use a while loop to avoid stack overflow when there are many synchronous effects
-      while (!done) {
-        if (!value) {
+        let { done, value } = (context.interceptIterator || iterator).next(...args);
+
+        // We use a while loop to avoid stack overflow when there are many synchronous effects
+        while (!done) {
+          if (!value) {
+            reject(
+              new Error(
+                `Invalid effected program: an effected program should yield only effects (received ${stringify(value)})`,
+              ),
+            );
+            return;
+          }
+          if (value instanceof Effect) {
+            while (value instanceof Effect && typeof (value as any).defaultHandler === "function") {
+              value = handleEffect(
+                context,
+                effect.name,
+                value,
+                (value as any).defaultHandler,
+              ).value;
+              // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+              if (context.terminated) return context.terminatedValue;
+            }
+            if (value instanceof Effect) {
+              reject(
+                new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`),
+              );
+              return;
+            }
+          }
+          if (value._effectSync) {
+            ({ done, value } = (context.interceptIterator || iterator).next(
+              ...("value" in value ? [value.value] : []),
+            ));
+            continue;
+          }
+          if (value._effectAsync) {
+            if (value.interruptable) {
+              let resolve!: (value: unknown) => void;
+              const promise = new Promise((_resolve) => (resolve = _resolve));
+              // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+              value.onComplete(resolve, (...args: unknown[]) => reject(...args.slice(0, 1)));
+              ({ done, value } = (context.interceptIterator || iterator).next({
+                _effectInterrupt: value.interruptable,
+                with: promise,
+              }));
+              continue;
+            } else {
+              // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+              value.onComplete(iterate, (...args: unknown[]) => reject(...args.slice(0, 1)));
+              return;
+            }
+          }
           reject(
             new Error(
               `Invalid effected program: an effected program should yield only effects (received ${stringify(value)})`,
@@ -2645,55 +2686,12 @@ export function runAsync<E extends Effected<Effect, unknown>>(
           );
           return;
         }
-        if (value instanceof Effect) {
-          while (value instanceof Effect && typeof (value as any).defaultHandler === "function") {
-            value = handleEffect(context, effect.name, value, (value as any).defaultHandler).value;
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-            if (context.terminated) return context.terminatedValue;
-          }
-          if (value instanceof Effect) {
-            reject(new UnhandledEffectError(value, `Unhandled effect: ${stringifyEffect(value)}`));
-            return;
-          }
-        }
-        if (value._effectSync) {
-          try {
-            ({ done, value } = (context.interceptIterator || iterator).next(
-              ...("value" in value ? [value.value] : []),
-            ));
-          } catch (e) {
-            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-            reject(e);
-            return;
-          }
-          continue;
-        }
-        if (value._effectAsync) {
-          if (value.interruptable) {
-            let resolve!: (value: unknown) => void;
-            const promise = new Promise((_resolve) => (resolve = _resolve));
-            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-            value.onComplete(resolve, (...args: unknown[]) => reject(...args.slice(0, 1)));
-            ({ done, value } = (context.interceptIterator || iterator).next({
-              _effectInterrupt: value.interruptable,
-              with: promise,
-            }));
-            continue;
-          } else {
-            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-            value.onComplete(iterate, (...args: unknown[]) => reject(...args.slice(0, 1)));
-            return;
-          }
-        }
-        reject(
-          new Error(
-            `Invalid effected program: an effected program should yield only effects (received ${stringify(value)})`,
-          ),
-        );
-        return;
-      }
 
-      resolve(value);
+        resolve(value);
+      } catch (e) {
+        // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+        reject(e);
+      }
     };
 
     iterate();
