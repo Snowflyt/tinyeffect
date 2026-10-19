@@ -620,6 +620,146 @@ describe("effected", () => {
   });
 });
 
+describe("runAsync error settlement", () => {
+  it("should reject when the iterator factory throws", async () => {
+    const failure = new Error("iterator factory failed");
+    const program = effected<never, never>(() => {
+      throw failure;
+    });
+
+    const result = program.runAsync();
+
+    await expect(result).rejects.toBe(failure);
+    expect(() => program.runSync()).toThrow(failure);
+  });
+
+  it("should reject when an Effected.all child iterator factory throws", async () => {
+    const failure = new Error("child iterator factory failed");
+    const child = effected<never, never>(() => {
+      throw failure;
+    });
+
+    const result = Effected.all([Effected.of(1), child]).runAsync();
+
+    await expect(result).rejects.toBe(failure);
+  });
+
+  it.each([false, true])(
+    "should reject a default handler throw after an async boundary: %s",
+    async (afterAsync) => {
+      const failure = new Error("default handler failed");
+      const fail = effect<[], void>()("fail", {
+        defaultHandler: () => {
+          throw failure;
+        },
+      });
+      const program = effected(function* () {
+        if (afterAsync) yield* effectify(Promise.resolve());
+        yield* fail();
+      });
+
+      await expect(program.runAsync()).rejects.toBe(failure);
+      expect(() => fail().runSync()).toThrow(failure);
+    },
+    1000,
+  );
+
+  it("should reject a default generator handler throw after an async boundary", async () => {
+    const failure = new Error("generator handler failed");
+    const fail = effect<[], void>()("fail", {
+      *defaultHandler() {
+        yield* Effected.of(undefined);
+        throw failure;
+      },
+    });
+    const program = effected(function* () {
+      yield* effectify(Promise.resolve());
+      yield* fail();
+    });
+
+    await expect(program.runAsync()).rejects.toBe(failure);
+  }, 1000);
+
+  it("should reject a default handler throw after callback-based resumption", async () => {
+    const failure = new Error("default handler failed");
+    let resume!: () => void;
+    const pause = effect<[], void>()("pause", {
+      defaultHandler: (context) => {
+        resume = context.resume;
+      },
+    });
+    const fail = effect<[], void>()("fail", {
+      defaultHandler: () => {
+        throw failure;
+      },
+    });
+    const program = effected(function* () {
+      yield* pause();
+      yield* fail();
+    });
+    const result = program.runAsync();
+
+    expect(() => resume()).not.toThrow();
+    await expect(result).rejects.toBe(failure);
+  }, 1000);
+
+  it.each([
+    { afterAsync: false, interruptable: false },
+    { afterAsync: true, interruptable: false },
+    { afterAsync: false, interruptable: true },
+    { afterAsync: true, interruptable: true },
+  ])(
+    "should reject a registration throw (afterAsync: $afterAsync, interruptable: $interruptable)",
+    async ({ afterAsync, interruptable }) => {
+      const failure = new Error("async registration failed");
+      const input = Promise.resolve();
+      vi.spyOn(input, "then").mockImplementation(() => {
+        throw failure;
+      });
+      const waiting = effectify(input);
+      const program = effected(function* () {
+        if (afterAsync) yield* effectify(Promise.resolve());
+        if (interruptable) yield* Effected.all([waiting]);
+        else yield* waiting;
+      });
+
+      await expect(program.runAsync()).rejects.toBe(failure);
+    },
+    1000,
+  );
+
+  it.each([false, true])(
+    "should reject an iterator throw while interrupting after an async boundary: %s",
+    async (afterAsync) => {
+      const failure = new Error("child iteration failed");
+      const waiting = effectify(new Promise<void>(() => {}));
+      const fail = Effected.from(() => {
+        throw failure;
+      });
+      const program = effected(function* () {
+        if (afterAsync) yield* effectify(Promise.resolve());
+        yield* Effected.all([waiting, fail]);
+      });
+
+      await expect(program.runAsync()).rejects.toBe(failure);
+    },
+    1000,
+  );
+
+  it("should preserve rejection identity after a default handler suspends", async () => {
+    const failure = { message: "generator handler failed" };
+    const fail = effect<[], void>()("fail", {
+      *defaultHandler() {
+        yield* effectify(Promise.resolve());
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw failure;
+      },
+    });
+
+    await expect(fail().runAsync()).rejects.toBe(failure);
+  });
+});
+
 describe("Default handlers", () => {
   it("should apply default handlers when no explicit handler is provided", () => {
     const logs: string[] = [];
