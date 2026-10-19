@@ -497,7 +497,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
             });
             const nextIndex = nextIdleIndex();
 
-            if (!nextIndex)
+            if (nextIndex === null)
               return {
                 done: false,
                 value: {
@@ -527,7 +527,7 @@ export class Effected<out E extends Effect, out R> implements Iterable<E, R, unk
               return { done: true, value: results };
             } else {
               const nextIndex = nextIdleIndex();
-              if (!nextIndex)
+              if (nextIndex === null)
                 return {
                   done: false,
                   value: {
