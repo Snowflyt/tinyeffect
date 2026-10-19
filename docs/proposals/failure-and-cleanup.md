@@ -28,13 +28,13 @@ Run the standalone reproducer from the repository root using Node 24.19.0:
 ```sh
 node scripts/repro-failure-and-cleanup.ts --expect current
 node scripts/repro-failure-and-cleanup.ts --expect proposed
-node scripts/repro-iterator-cleanup.ts
 ```
 
 `--project /path/to/tinyeffect` selects another checkout. `current` verifies the baseline source hash
 and passes when the current observations are reproduced. `proposed` asserts the intended behavior
-and exits nonzero on the unchanged implementation. These are standalone diagnostics, outside the
-ordinary test suite; a passing characterization run is not a passing fix.
+and exits nonzero on the unchanged implementation. The same entry point always executes seven
+independent JavaScript protocol controls and reports them under `protocolControls`. This is a standalone
+diagnostic, outside the ordinary test suite; a passing characterization run is not a passing fix.
 
 The seven library cases use manually controlled in-memory Promises. They observe event-loop turns,
 not network failures or real resource disposal:
@@ -232,7 +232,7 @@ only the repeated-request problem.
 
 A further native-generator limit is that finally can override the exit request itself. For example,
 `finally { break enclosingLabel; }` can resume ordinary statements after that label even when entered
-by `return()`. The protocol control script includes this case: the first `return` executes an
+by `return()`. The protocol controls include this case: the first `return` executes an
 `ordinary-after-finally` marker and yields a new body wait. A generic driver cannot classify that yield
 as body versus cleanup, so protocol-level closing means draining the requested exit to its observable
 terminal outcome. It cannot guarantee that arbitrary user control flow performs no more ordinary work.
@@ -305,7 +305,7 @@ while B already has a successful wakeup queued but unconsumed; failure
 while another child is already naturally in finally; async cleanup failure; cleanup that never
 settles; duplicate callbacks; late success and late rejection; nested `all`; object-shaped `all`;
 empty input; factory and input-iterator failure; omitted values; and user-thrown non-Error values.
-The included scripts establish seven current failures and seven ordinary JavaScript protocol controls;
+The included script establishes seven current failures and seven ordinary JavaScript protocol controls;
 they do not validate an implementation, arbitrary cancellation, or the full existing test suite.
 
 [tiny-all]: https://github.com/Snowflyt/tinyeffect/blob/0a867fe930c86a2b16432581440468af0da1c129/src/effected.ts#L446-L555
