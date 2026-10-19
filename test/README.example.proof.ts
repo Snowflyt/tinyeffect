@@ -1134,8 +1134,8 @@ test("Example: Build a configurable logging system with effects", () => {
       *defaultHandler({ resume }, ...args) {
         const logger = yield* askLogger();
         const result = logger[level](...args);
-        if (result instanceof Promise) void result.then(resume);
-        else resume();
+        if (result instanceof Promise) yield* effectify(result);
+        resume();
       },
     });
 

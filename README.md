@@ -1562,9 +1562,9 @@ const logEffect = (level: LogLevel): EffectFactory<Logging> =>
     *defaultHandler({ resume }, ...args) {
       const logger = yield* askLogger();
       const result = logger[level](...args);
-      // Handle async loggers
-      if (result instanceof Promise) result.then(resume);
-      else resume();
+      // Wait for async loggers before resuming
+      if (result instanceof Promise) yield* effectify(result);
+      resume();
     },
   });
 
@@ -1575,7 +1575,7 @@ export const logWarn = logEffect("warn");
 export const logError = logEffect("error");
 ```
 
-We define a default effect handler that relies on the `Logger` dependency for each log level. This allows us to control which log levels are enabled at runtime.
+We define a default effect handler that relies on the `Logger` dependency for each log level. This allows us to control which log levels are enabled at runtime. Asynchronous logger results are yielded through `effectify`, so `runAsync()` waits for them and rejects with the same error if the logger Promise rejects.
 
 **Step 3: Define handlers for common logging features**
 
