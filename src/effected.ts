@@ -2825,11 +2825,12 @@ const handleEffect = <E extends Effect, R>(
     return { done: false, value: constructHandledEffect() } as never;
 
   const iter = Symbol.iterator in handlerResult ? handlerResult[Symbol.iterator]() : handlerResult;
+  const parentInterceptIterator = context.interceptIterator;
   context.interceptIterator = {
     next: (...args: [] | [unknown]) => {
       const result = iter.next(...args);
       if (result.done) {
-        context.interceptIterator = null;
+        context.interceptIterator = parentInterceptIterator;
         return { done: false, value: constructHandledEffect() } as never;
       }
       return result as never;

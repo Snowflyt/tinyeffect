@@ -621,6 +621,99 @@ describe("effected", () => {
 });
 
 describe("Default handlers", () => {
+  it.each(["runSync", "runAsync"] as const)(
+    "should restore a parent default handler after a nested handler completes with %s",
+    async (run) => {
+      const events: string[] = [];
+      const inner = effect<[], number>()("inner", {
+        *defaultHandler({ resume }) {
+          resume(2);
+          events.push("inner:end");
+        },
+      });
+      const outer = effect<[], number>()("outer", {
+        *defaultHandler({ resume }) {
+          try {
+            resume(1);
+          } finally {
+            events.push("outer:finally:start");
+            const value = yield* inner();
+            events.push(`outer:finally:end:${value}`);
+          }
+          events.push("outer:end");
+        },
+      });
+
+      expect(await outer()[run]()).toBe(1);
+      expect(events).toEqual([
+        "outer:finally:start",
+        "inner:end",
+        "outer:finally:end:2",
+        "outer:end",
+      ]);
+    },
+  );
+
+  it("should restore nested default handlers across asynchronous waits", async () => {
+    const events: string[] = [];
+    const inner = effect<[], number>()("inner", {
+      *defaultHandler({ resume }) {
+        const value = yield* effectify(Promise.resolve(3));
+        resume(value);
+        events.push("inner:end");
+      },
+    });
+    const middle = effect<[], number>()("middle", {
+      *defaultHandler({ resume }) {
+        const value = yield* inner();
+        yield* effectify(Promise.resolve());
+        resume(value + 2);
+        events.push("middle:end");
+      },
+    });
+    const outer = effect<[], number>()("outer", {
+      *defaultHandler({ resume }) {
+        yield* effectify(Promise.resolve());
+        const value = yield* middle();
+        resume(value + 1);
+        events.push("outer:end");
+      },
+    });
+    const program = effected(function* () {
+      const first = yield* outer();
+      const second = yield* outer();
+      return [first, second];
+    });
+
+    expect(await program.runAsync()).toEqual([6, 6]);
+    expect(events).toEqual([
+      "inner:end",
+      "middle:end",
+      "outer:end",
+      "inner:end",
+      "middle:end",
+      "outer:end",
+    ]);
+  });
+
+  it("should restore default handlers that return effected programs", () => {
+    const inner = effect<[], number>()("inner", {
+      defaultHandler: ({ resume }) =>
+        effected(function* () {
+          resume(2);
+        }),
+    });
+    const outer = effect<[], number>()("outer", {
+      defaultHandler: ({ resume }) =>
+        effected(function* () {
+          const value = yield* inner();
+          resume(value + 1);
+        }),
+    });
+
+    expect(outer().runSync()).toBe(3);
+  });
+
   it("should apply default handlers when no explicit handler is provided", () => {
     const logs: string[] = [];
 
